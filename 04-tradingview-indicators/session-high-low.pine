@@ -1,0 +1,780 @@
+//@version=6
+// ============================================================
+//  FILE VERSION 11 (full ICT liquidity map + dates on labels
+//  — if you don't see this line at the top of the editor,
+//  you pasted an older copy)
+//
+//  • Labels now carry the DATE: "ASIA LOW (Aug 12)" — so you
+//    always know which day a level came from.
+//  • The full ICT prep list is here now:
+//    - Asia / London / NY AM / NY PM session highs & lows
+//    - Yesterday's Daily high/low + LAST WEEK's high/low
+//    - Midnight open (true day open) + 8:30 open price
+//    - NDOG (new day opening gap, 5pm close → 6pm open)
+//    - NWOG (new week opening gap, Fri close → Sun open)
+//    Gaps disappear once both sides get filled.
+//  • "PJ Minimal" style (the default): thin clean lines,
+//    small plain text labels, color coded per session.
+//    Lines get DIFFERENT lengths so labels never overlap.
+//  • Old unswept session highs/lows stay until swept.
+//  • Switch back to "Pretty" any time in settings.
+//
+//  SESSION HIGH / LOW + SMT  —  Pretty Edition, for Page 🎀
+//
+//  What it does, in plain words:
+//  • Draws a line at the HIGH and LOW of each session.
+//  • Asia = purple. London = hot pink. New York = rose.
+//    Pick your own colors in settings.
+//  • NEW: also draws yesterday's Daily high/low, and the
+//    previous 4-hour, 1-hour, and 30-minute candle highs/lows.
+//    Same rules: solid = untagged, dotted + 💖 = tagged.
+//    (A level only shows if your chart timeframe is small
+//    enough to see it. 30m lines won't draw on a 1H chart.)
+//  • NEW: 15-minute ORB — the opening range from 9:30 to 9:45
+//    New York time. Gold lines at its high and low, same
+//    tagged rules as everything else.
+//  • The ORB also gets a gold BOX around its high and low.
+//    It builds during the 15 minutes, locks at 9:45, and can
+//    stretch right for the rest of the day so you always see
+//    where price sits vs. the opening range.
+//  • Sparkle labels: "✨ ♡ ASIA HIGH ✨"
+//  • A soft glow box fills each session's range.
+//  • A corner story card tells you each level's status
+//    in one glance: building, untagged, or swept.
+//  • Tagged level = dotted line + "💖 TAGGED" label.
+//    Solid = untagged. Still holding money.
+//  • Alerts can ding you the moment a level is tagged.
+//  • NEW: the SMT Spotter is built in now (one indicator
+//    slot instead of two). 💔 at swing highs, 💗 at swing
+//    lows when NQ and ES stop agreeing. Hover any heart
+//    for the plain-words lesson.
+//  • And your wishlist item: each heart now NAMES the pool
+//    that was swept — "swept ASIA LOW", "swept DAILY HIGH" —
+//    so you always know WHAT liquidity was taken.
+//  • NEW: the Base Hit Ruler is built in too. Two dotted
+//    lines and two soft zones show what 25 points looks
+//    like — the trip UP and the trip DOWN. Type your entry
+//    price in settings to lock it, or leave 0 to follow
+//    live price.
+// ============================================================
+indicator("Session High/Low + SMT — Pretty", "Sessions + SMT ♡", overlay = true,
+     max_lines_count = 300, max_labels_count = 300, max_boxes_count = 50)
+
+// ---------- SETTINGS ----------
+grpLook = "How it looks"
+styleChoice = input.string("PJ Minimal", "Line style",
+     options = ["PJ Minimal", "Pretty"], group = grpLook,
+     tooltip = "PJ Minimal = thin clean lines, small plain labels, no boxes. Pretty = the original look with glow boxes and sparkle labels.")
+histKeep = input.int(4, "Old unswept sessions to keep (each)", minval = 0, maxval = 10, group = grpLook,
+     tooltip = "How many past sessions' unswept highs/lows stay on the chart, per session type. They disappear when swept.")
+lineW    = input.int(3, "Line thickness (Pretty style)", minval = 1, maxval = 8, group = grpLook)
+txtChoice = input.string("Normal", "Label text size",
+     options = ["Small", "Normal", "Big", "Huge"], group = grpLook)
+sparkOn  = input.bool(true, "Sparkles on the labels ✨", group = grpLook)
+glowOn   = input.bool(true, "Glow box over each session's range", group = grpLook)
+cardOn   = input.bool(true, "Corner story card", group = grpLook)
+shadeOn  = input.bool(true, "Soft pastel shading during each session", group = grpLook)
+hideTag  = input.bool(false, "Hide a line after it gets tagged", group = grpLook)
+
+grpCol = "Colors (make it yours)"
+colAsia = input.color(#9D4EDD, "Asia",     group = grpCol)   // orchid purple
+colLdn  = input.color(#E0218A, "London",   group = grpCol)   // hot pink
+colNy   = input.color(#FF7BAC, "New York", group = grpCol)   // soft rose
+
+grpStyle = "Label style per session"
+asiaSym  = input.string("♡", "Asia symbol",     group = grpStyle)
+ldnSym   = input.string("♡", "London symbol",   group = grpStyle)
+nySym    = input.string("♡", "New York symbol", group = grpStyle)
+asiaFont = input.string("Regular", "Asia font",     options = ["Regular", "Typewriter"], group = grpStyle)
+ldnFont  = input.string("Typewriter", "London font", options = ["Regular", "Typewriter"], group = grpStyle)
+nyFont   = input.string("Regular", "New York font", options = ["Regular", "Typewriter"], group = grpStyle)
+
+grpSess = "Sessions (times are New York time)"
+showAsia = input.bool(true,  "Show Asia",     group = grpSess)
+asiaTime = input.session("2000-0000", "Asia hours",   group = grpSess)
+showLdn  = input.bool(true,  "Show London",   group = grpSess)
+ldnTime  = input.session("0200-0500", "London hours", group = grpSess)
+showNy   = input.bool(true,  "Show New York", group = grpSess)
+nyTime   = input.session("0830-1100", "New York hours", group = grpSess)
+showPm   = input.bool(true,  "Show NY PM",   group = grpSess)
+pmTime   = input.session("1330-1600", "NY PM hours", group = grpSess)
+colPm    = input.color(#F06292, "NY PM color", group = grpSess)   // deep rose
+showOrb  = input.bool(true,  "Show 15-min ORB (9:30–9:45)", group = grpSess)
+orbTime  = input.session("0930-0945", "ORB minutes", group = grpSess)
+colOrb   = input.color(#E6B800, "ORB color", group = grpSess)   // honey gold
+orbBoxOn = input.bool(true, "Gold box around the ORB range", group = grpSess)
+orbBoxStretch = input.bool(true, "Stretch ORB box right until 4pm NY", group = grpSess)
+tz       = input.string("America/New_York", "Time zone", group = grpSess)
+
+grpHtf = "Bigger candle levels (previous candle's high & low)"
+showDay = input.bool(true,  "Show yesterday's Daily high/low", group = grpHtf)
+colDay  = input.color(#6A0DAD, "Daily color", group = grpHtf)   // royal purple
+show4h  = input.bool(true,  "Show previous 4-hour high/low",  group = grpHtf)
+col4h   = input.color(#C9184A, "4H color",   group = grpHtf)   // deep raspberry
+show1h  = input.bool(true,  "Show previous 1-hour high/low",  group = grpHtf)
+col1h   = input.color(#C77DFF, "1H color",   group = grpHtf)   // light violet
+show30  = input.bool(true,  "Show previous 30-minute high/low", group = grpHtf)
+col30   = input.color(#F8A1C4, "30m color",  group = grpHtf)   // pastel pink
+showWk  = input.bool(true,  "Show last week's high/low", group = grpHtf)
+colWk   = input.color(#6C3483, "Weekly color", group = grpHtf)  // deep violet
+
+grpIct = "ICT opening levels"
+showMid  = input.bool(true, "Midnight open (true day open)", group = grpIct)
+colMid   = input.color(#455A64, "Midnight color", group = grpIct)
+show0830 = input.bool(true, "8:30 open price", group = grpIct)
+col0830  = input.color(#78909C, "8:30 color", group = grpIct)
+showNdog = input.bool(true, "NDOG — new day opening gap", group = grpIct,
+     tooltip = "The gap between yesterday's 5pm close and the 6pm reopen. Disappears once price fills both sides.")
+colNdog  = input.color(#7FB3D5, "NDOG color", group = grpIct)   // light blue
+showNwog = input.bool(true, "NWOG — new week opening gap", group = grpIct,
+     tooltip = "The gap between Friday's 5pm close and Sunday's 6pm open. Disappears once price fills both sides.")
+colNwog  = input.color(#95A5A6, "NWOG color", group = grpIct)   // soft gray
+
+grpSmt = "SMT Spotter 💔💗"
+smtOn   = input.bool(true, "Show SMT hearts", group = grpSmt)
+pairSym = input.symbol("CME_MINI:ES1!", "Sister market", group = grpSmt,
+     tooltip = "The market to compare against. On NQ or MNQ, use ES. PJ calls ES the big brother.")
+smtLen  = input.int(5, "Swing size (candles on each side)", minval = 2, maxval = 20, group = grpSmt,
+     tooltip = "How many candles a swing needs on each side to count. Bigger number = fewer, bigger swings. The heart shows up this many candles after the swing, because a swing is not real until candles form on both sides of it.")
+smtNameOn = input.bool(true, "Hearts name the pool that was swept", group = grpSmt,
+     tooltip = "When the SMT swing dipped under a tracked low (or over a tracked high), the heart says which one: Asia, London, New York, or yesterday's Daily.")
+smtSessOnly = input.bool(true, "Only show hearts during Asia + New York hours", group = grpSmt,
+     tooltip = "Hearts only print when the swing happened inside the Asia or New York session windows above. Turn off to see SMTs around the clock.")
+smtLineW  = input.int(2, "Connector line thickness", minval = 1, maxval = 6, group = grpSmt)
+smtCardOn = input.bool(true, "Show the '♡ what is SMT?' corner card", group = grpSmt)
+colBear = input.color(#9D4EDD, "SMT at highs 💔", group = grpSmt)   // orchid purple
+colBull = input.color(#E0218A, "SMT at lows 💗",  group = grpSmt)   // hot pink
+
+grpRuler = "Base Hit Ruler 📏"
+rulerOn  = input.bool(true, "Show the ruler", group = grpRuler)
+rulerPts = input.float(25.0, "How many points?", minval = 1, step = 5, group = grpRuler)
+rulerAnchor = input.float(0.0, "My entry price (0 = follow live price)", minval = 0, group = grpRuler)
+rulerUp  = input.bool(true, "Show the UP zone (long trip)", group = grpRuler)
+rulerDn  = input.bool(true, "Show the DOWN zone (short trip)", group = grpRuler)
+rulerCUp  = input.color(#1F6F3F, "UP zone",     group = grpRuler)
+rulerCDn  = input.color(#A33127, "DOWN zone",   group = grpRuler)
+rulerCMid = input.color(color.gray, "Middle line", group = grpRuler)
+
+labSize = txtChoice == "Huge" ? size.huge :
+     txtChoice == "Big" ? size.large :
+     txtChoice == "Normal" ? size.normal : size.small
+
+// Pick white or dark plum text, whichever reads best on the color.
+f_textOn(color c) =>
+    bright = 0.299 * color.r(c) + 0.587 * color.g(c) + 0.114 * color.b(c)
+    bright > 150 ? color.rgb(74, 14, 46) : color.white
+
+// A "PJ Minimal" switch used by the drawing code below.
+bool minimalOn = styleChoice == "PJ Minimal"
+
+// Turn a bar's time into "Aug 12" (in the chart's session time zone).
+f_dateTxt(int t) =>
+    int m = month(t, tz)
+    string mName = switch m
+        1  => "Jan"
+        2  => "Feb"
+        3  => "Mar"
+        4  => "Apr"
+        5  => "May"
+        6  => "Jun"
+        7  => "Jul"
+        8  => "Aug"
+        9  => "Sep"
+        10 => "Oct"
+        11 => "Nov"
+        12 => "Dec"
+    mName + " " + str.tostring(dayofmonth(t, tz))
+
+// ---------- ONE SESSION, START TO FINISH ----------
+// Tracks the CURRENT session, and keeps every PAST session's
+// unswept high/low alive until price sweeps it. Lines get
+// different lengths (offsets) so labels never overlap.
+f_session(bool show, string sessTxt, color col, string sessName, string sym, string fontName, bool showTag, bool keepHist, int offBase) =>
+    // --- current session ---
+    var float hi = na
+    var float lo = na
+    var line  hiLine = na
+    var line  loLine = na
+    var label hiLab  = na
+    var label loLab  = na
+    var box   glow   = na
+    var bool  hiTagged = false
+    var bool  loTagged = false
+    // --- parked levels: past sessions, still unswept ---
+    var array<line>  oldHiLn  = array.new<line>()
+    var array<label> oldHiLb  = array.new<label>()
+    var array<float> oldHiV   = array.new<float>()
+    var array<int>   oldHiOff = array.new<int>()
+    var array<line>  oldLoLn  = array.new<line>()
+    var array<label> oldLoLb  = array.new<label>()
+    var array<float> oldLoV   = array.new<float>()
+    var array<int>   oldLoOff = array.new<int>()
+    var int slotCtr = 0
+    var string sessDate = na
+    bool hiTagNow = false
+    bool loTagNow = false
+    string base = minimalOn ? sessName : (sym == "" ? sessName : sym + " " + sessName)
+    string fontFam = fontName == "Typewriter" ? font.family_monospace : font.family_default
+    color txtCol = f_textOn(col)
+    int   wLine  = minimalOn ? 1 : lineW
+
+    bool inSess  = show and not na(time(timeframe.period, sessTxt, tz))
+    bool newSess = inSess and not inSess[1]
+
+    // small helper look for minimal labels: plain colored text, no box
+    if newSess
+        // The old session is finished. Park its unswept levels
+        // instead of throwing them away.
+        if not na(hiLine)
+            if keepHist and not hiTagged
+                int offH = offBase + (slotCtr % 4) * 12
+                slotCtr += 1
+                array.push(oldHiLn, hiLine)
+                array.push(oldHiLb, hiLab)
+                array.push(oldHiV, hi)
+                array.push(oldHiOff, offH)
+            else
+                line.delete(hiLine)
+                label.delete(hiLab)
+        if not na(loLine)
+            if keepHist and not loTagged
+                int offL = offBase + 6 + (slotCtr % 4) * 12
+                slotCtr += 1
+                array.push(oldLoLn, loLine)
+                array.push(oldLoLb, loLab)
+                array.push(oldLoV, lo)
+                array.push(oldLoOff, offL)
+            else
+                line.delete(loLine)
+                label.delete(loLab)
+        // Too many old levels? Drop the oldest ones.
+        while array.size(oldHiV) > histKeep
+            line.delete(array.shift(oldHiLn))
+            label.delete(array.shift(oldHiLb))
+            array.shift(oldHiV)
+            array.shift(oldHiOff)
+        while array.size(oldLoV) > histKeep
+            line.delete(array.shift(oldLoLn))
+            label.delete(array.shift(oldLoLb))
+            array.shift(oldLoV)
+            array.shift(oldLoOff)
+        box.delete(glow)
+        // Start the fresh session.
+        hi := high
+        lo := low
+        hiTagged := false
+        loTagged := false
+        sessDate := f_dateTxt(time)
+        hiLine := line.new(bar_index, hi, bar_index, hi, color = col, width = wLine)
+        loLine := line.new(bar_index, lo, bar_index, lo, color = col, width = wLine)
+        if glowOn and not minimalOn
+            glow := box.new(bar_index, hi, bar_index, lo,
+                 border_color = color.new(col, 80), bgcolor = color.new(col, 85))
+        if minimalOn
+            hiLab := label.new(bar_index, hi, base + " HIGH (" + sessDate + ")",
+                 style = label.style_none, textcolor = col, size = size.small)
+            loLab := label.new(bar_index, lo, base + " LOW (" + sessDate + ")",
+                 style = label.style_none, textcolor = col, size = size.small)
+        else
+            hiLab := label.new(bar_index, hi,
+                 (sparkOn ? "✨ " : "") + base + " HIGH (" + sessDate + ")" + (sparkOn ? " ✨" : ""),
+                 style = label.style_label_left, color = col,
+                 textcolor = txtCol, size = labSize, text_font_family = fontFam)
+            loLab := label.new(bar_index, lo,
+                 (sparkOn ? "✨ " : "") + base + " LOW (" + sessDate + ")" + (sparkOn ? " ✨" : ""),
+                 style = label.style_label_left, color = col,
+                 textcolor = txtCol, size = labSize, text_font_family = fontFam)
+    else if inSess and not na(hiLine)
+        // Session is running. Keep stretching everything.
+        hi := math.max(hi, high)
+        lo := math.min(lo, low)
+        line.set_xy1(hiLine, line.get_x1(hiLine), hi)
+        line.set_xy2(hiLine, bar_index, hi)
+        line.set_xy1(loLine, line.get_x1(loLine), lo)
+        line.set_xy2(loLine, bar_index, lo)
+        label.set_xy(hiLab, bar_index, hi)
+        label.set_xy(loLab, bar_index, lo)
+        if not na(glow)
+            box.set_top(glow, hi)
+            box.set_bottom(glow, lo)
+            box.set_right(glow, bar_index)
+    else if not na(hiLine)
+        // Session is over. Lines wait to get tagged.
+        if not hiTagged or not showTag
+            line.set_x2(hiLine, bar_index + offBase)
+            label.set_x(hiLab, bar_index + offBase)
+        if not hiTagged and high >= hi
+            hiTagged := true
+            hiTagNow := true
+            if showTag
+                if minimalOn or hideTag
+                    line.delete(hiLine)
+                    label.delete(hiLab)
+                else
+                    line.set_style(hiLine, line.style_dotted)
+                    label.set_text(hiLab, "💖 " + base + " HIGH TAGGED")
+        if not loTagged or not showTag
+            line.set_x2(loLine, bar_index + offBase + 6)
+            label.set_x(loLab, bar_index + offBase + 6)
+        if not loTagged and low <= lo
+            loTagged := true
+            loTagNow := true
+            if showTag
+                if minimalOn or hideTag
+                    line.delete(loLine)
+                    label.delete(loLab)
+                else
+                    line.set_style(loLine, line.style_dotted)
+                    label.set_text(loLab, "💖 " + base + " LOW TAGGED")
+
+    // --- every bar: babysit the parked levels ---
+    if keepHist
+        int i = array.size(oldHiV) - 1
+        while i >= 0
+            float v  = array.get(oldHiV, i)
+            line  ln = array.get(oldHiLn, i)
+            label lb = array.get(oldHiLb, i)
+            int   off = array.get(oldHiOff, i)
+            if high >= v
+                // Swept. Old level comes off the board.
+                hiTagNow := true
+                if minimalOn or hideTag
+                    line.delete(ln)
+                    label.delete(lb)
+                else
+                    line.set_x2(ln, bar_index)
+                    label.set_x(lb, bar_index)
+                    line.set_style(ln, line.style_dotted)
+                    label.set_text(lb, "💖 " + base + " HIGH TAGGED")
+                array.remove(oldHiLn, i)
+                array.remove(oldHiLb, i)
+                array.remove(oldHiV, i)
+                array.remove(oldHiOff, i)
+            else
+                line.set_x2(ln, bar_index + off)
+                label.set_x(lb, bar_index + off)
+            i -= 1
+        int j = array.size(oldLoV) - 1
+        while j >= 0
+            float v  = array.get(oldLoV, j)
+            line  ln = array.get(oldLoLn, j)
+            label lb = array.get(oldLoLb, j)
+            int   off = array.get(oldLoOff, j)
+            if low <= v
+                loTagNow := true
+                if minimalOn or hideTag
+                    line.delete(ln)
+                    label.delete(lb)
+                else
+                    line.set_x2(ln, bar_index)
+                    label.set_x(lb, bar_index)
+                    line.set_style(ln, line.style_dotted)
+                    label.set_text(lb, "💖 " + base + " LOW TAGGED")
+                array.remove(oldLoLn, j)
+                array.remove(oldLoLb, j)
+                array.remove(oldLoV, j)
+                array.remove(oldLoOff, j)
+            else
+                line.set_x2(ln, bar_index + off)
+                label.set_x(lb, bar_index + off)
+            j -= 1
+    [inSess, hiTagNow, loTagNow, hiTagged, loTagged, not na(hi), hi, lo]
+
+// ---------- ONE BIGGER-CANDLE LEVEL, START TO FINISH ----------
+// Draws the PREVIOUS candle's high & low for a bigger timeframe
+// (Daily, 4H, 1H, 30m). New candle starts -> old lines clear,
+// fresh lines appear. Solid = untagged. Dotted + 💖 = tagged.
+f_bigLevel(bool show, string tf, color col, string lvlName, string sym, bool wantDate) =>
+    var float hi = na
+    var float lo = na
+    var line  hiLine = na
+    var line  loLine = na
+    var label hiLab  = na
+    var label loLab  = na
+    var bool  hiTagged = false
+    var bool  loTagged = false
+    bool hiTagNow = false
+    bool loTagNow = false
+    string base = sym == "" ? lvlName : sym + " " + lvlName
+    color txtCol = f_textOn(col)
+
+    // Only draw if the chart timeframe is small enough to see it.
+    bool tfOk = timeframe.in_seconds() <= timeframe.in_seconds(tf)
+    bool ok = show and tfOk
+
+    // Previous completed candle's high & low on that bigger timeframe.
+    [ph, pl, pt] = request.security(syminfo.tickerid, tf, [high[1], low[1], time[1]], lookahead = barmerge.lookahead_on)
+
+    bool newPeriod = ok and timeframe.change(tf) and not na(ph)
+
+    if newPeriod
+        // A fresh big candle just opened. Clear the old lines.
+        line.delete(hiLine)
+        line.delete(loLine)
+        label.delete(hiLab)
+        label.delete(loLab)
+        hi := ph
+        lo := pl
+        hiTagged := false
+        loTagged := false
+        string dsuf = wantDate and not na(pt) ? " (" + f_dateTxt(int(pt)) + ")" : ""
+
+        hiLine := line.new(bar_index, hi, bar_index + 1, hi, color = col, width = minimalOn ? 1 : lineW)
+        loLine := line.new(bar_index, lo, bar_index + 1, lo, color = col, width = minimalOn ? 1 : lineW)
+        if minimalOn
+            hiLab := label.new(bar_index + 1, hi, lvlName + " HIGH" + dsuf,
+                 style = label.style_none, textcolor = col, size = size.small)
+            loLab := label.new(bar_index + 1, lo, lvlName + " LOW" + dsuf,
+                 style = label.style_none, textcolor = col, size = size.small)
+        else
+            hiLab := label.new(bar_index + 1, hi,
+                 (sparkOn ? "✨ " : "") + base + " HIGH" + dsuf + (sparkOn ? " ✨" : ""),
+                 style = label.style_label_left, color = col,
+                 textcolor = txtCol, size = labSize)
+            loLab := label.new(bar_index + 1, lo,
+                 (sparkOn ? "✨ " : "") + base + " LOW" + dsuf + (sparkOn ? " ✨" : ""),
+                 style = label.style_label_left, color = col,
+                 textcolor = txtCol, size = labSize)
+    else if ok and not na(hiLine)
+        // Lines are live. Stretch them and watch for tags.
+        if not hiTagged
+            line.set_x2(hiLine, bar_index)
+            label.set_x(hiLab, bar_index)
+            if high >= hi
+                hiTagged := true
+                hiTagNow := true
+                if minimalOn or hideTag
+                    line.delete(hiLine)
+                    label.delete(hiLab)
+                else
+                    line.set_style(hiLine, line.style_dotted)
+                    label.set_text(hiLab, "💖 " + base + " HIGH TAGGED")
+        if not loTagged
+            line.set_x2(loLine, bar_index)
+            label.set_x(loLab, bar_index)
+            if low <= lo
+                loTagged := true
+                loTagNow := true
+                if minimalOn or hideTag
+                    line.delete(loLine)
+                    label.delete(loLab)
+                else
+                    line.set_style(loLine, line.style_dotted)
+                    label.set_text(loLab, "💖 " + base + " LOW TAGGED")
+    [hiTagNow, loTagNow, hiTagged, loTagged, not na(hi), hi, lo]
+
+// ---------- RUN ALL THREE SESSIONS ----------
+[asiaIn, asiaHiTag, asiaLoTag, asiaHiDone, asiaLoDone, asiaHas, asiaHiV, asiaLoV] = f_session(showAsia, asiaTime, colAsia, "ASIA",     asiaSym, asiaFont, true, true, 4)
+[ldnIn,  ldnHiTag,  ldnLoTag,  ldnHiDone,  ldnLoDone,  ldnHas,  ldnHiV,  ldnLoV]  = f_session(showLdn,  ldnTime,  colLdn,  "LONDON",   ldnSym,  ldnFont, true, true, 8)
+[nyIn,   nyHiTag,   nyLoTag,   nyHiDone,   nyLoDone,   nyHas,   nyHiV,   nyLoV]   = f_session(showNy,   nyTime,   colNy,   "NY AM",    nySym,   nyFont, true, true, 12)
+[pmIn,   pmHiTag,   pmLoTag,   pmHiDone,   pmLoDone,   pmHas,   pmHiV,   pmLoV]   = f_session(showPm,   pmTime,   colPm,   "NY PM",    nySym,   nyFont, true, true, 21)
+[orbIn,  orbHiTag,  orbLoTag,  orbHiDone,  orbLoDone,  orbHas,  orbHiV,  orbLoV]  = f_session(showOrb,  orbTime,  colOrb,  "ORB",      "♡",     "Regular", false, false, 0)
+
+// ---------- ORB BOX (around the first 15 minutes) ----------
+var box   orbBox   = na
+var float orbBoxHi = na
+var float orbBoxLo = na
+bool orbWin = showOrb and orbBoxOn and not na(time(timeframe.period, orbTime, tz))
+bool orbWinNew = orbWin and not orbWin[1]
+bool dayWin = not na(time(timeframe.period, "0930-1600", tz))
+if orbWinNew
+    // 9:30 — a fresh day. Old box out, new box in.
+    box.delete(orbBox)
+    orbBoxHi := high
+    orbBoxLo := low
+    orbBox := box.new(bar_index, orbBoxHi, bar_index, orbBoxLo,
+         border_color = colOrb, border_width = 2,
+         bgcolor = color.new(colOrb, 82))
+else if orbWin and not na(orbBox)
+    // Still inside 9:30–9:45. The box grows with the range.
+    orbBoxHi := math.max(orbBoxHi, high)
+    orbBoxLo := math.min(orbBoxLo, low)
+    box.set_top(orbBox, orbBoxHi)
+    box.set_bottom(orbBox, orbBoxLo)
+    box.set_right(orbBox, bar_index)
+else if not na(orbBox) and orbBoxStretch and dayWin
+    // Range is locked. Box stretches right so you can see
+    // where price sits vs. the opening range all day.
+    box.set_right(orbBox, bar_index)
+
+// ---------- RUN THE BIGGER-CANDLE LEVELS ----------
+[dayHiTag, dayLoTag, dayHiDone, dayLoDone, dayHas, dayHiV, dayLoV] = f_bigLevel(showDay, "D",   colDay, "DAILY", "♡", true)
+[wkHiTag,  wkLoTag,  wkHiDone,  wkLoDone,  wkHas,  wkHiV,  wkLoV]  = f_bigLevel(showWk,  "W",   colWk,  "WEEKLY", "♡", true)
+[h4HiTag,  h4LoTag,  h4HiDone,  h4LoDone,  h4Has,  h4HiV,  h4LoV]  = f_bigLevel(show4h,  "240", col4h,  "4H",    "♡", false)
+[h1HiTag,  h1LoTag,  h1HiDone,  h1LoDone,  h1Has,  h1HiV,  h1LoV]  = f_bigLevel(show1h,  "60",  col1h,  "1H",    "♡", false)
+[m30HiTag, m30LoTag, m30HiDone, m30LoDone, m30Has, m30HiV, m30LoV] = f_bigLevel(show30,  "30",  col30,  "30M",   "♡", false)
+
+// ---------- ICT OPENING LEVELS ----------
+// One dashed line at a special opening price, with the date.
+f_openLine(bool show, string win, color col, string name, int off) =>
+    var line  ln = na
+    var label lb = na
+    int t = time(timeframe.period, win, tz)
+    bool st = show and not na(t) and na(t[1])
+    if st
+        line.delete(ln)
+        label.delete(lb)
+        ln := line.new(bar_index, open, bar_index + off, open, color = col, style = line.style_dashed, width = 1)
+        lb := label.new(bar_index + off, open, name + " (" + f_dateTxt(time) + ")",
+             style = label.style_none, textcolor = col, size = size.small)
+    else if not na(ln)
+        line.set_x2(ln, bar_index + off)
+        label.set_x(lb, bar_index + off)
+    0
+
+f_openLine(showMid,  "0000-0001", colMid,  "MIDNIGHT OPEN", 16)
+f_openLine(show0830, "0830-0831", col0830, "8:30 OPEN", 22)
+
+// Opening gaps: a soft box between the old close and the new
+// open. It stays until price fills BOTH sides, then it's gone.
+f_openGap(bool show, string closeWin, string openWin, color col, string name, int off) =>
+    var float lastClose = na
+    var box   gapBox = na
+    var label gapLab = na
+    var float gapTop = na
+    var float gapBot = na
+    var bool  hitTop = false
+    var bool  hitBot = false
+    if not na(time(timeframe.period, closeWin, tz))
+        lastClose := close
+    int t = time(timeframe.period, openWin, tz)
+    bool st = show and not na(t) and na(t[1])
+    if st and not na(lastClose)
+        box.delete(gapBox)
+        label.delete(gapLab)
+        gapTop := math.max(lastClose, open)
+        gapBot := math.min(lastClose, open)
+        hitTop := false
+        hitBot := false
+        gapBox := box.new(bar_index, gapTop, bar_index + off, gapBot,
+             border_color = color.new(col, 40), border_width = 1,
+             bgcolor = color.new(col, 88))
+        gapLab := label.new(bar_index + off, gapTop, name + " (" + f_dateTxt(time) + ")",
+             style = label.style_none, textcolor = col, size = size.small)
+    else if not na(gapBox)
+        hitTop := hitTop or high >= gapTop
+        hitBot := hitBot or low <= gapBot
+        if hitTop and hitBot
+            // Filled both sides. PJ says: ignore it now.
+            box.delete(gapBox)
+            label.delete(gapLab)
+        else
+            box.set_right(gapBox, bar_index + off)
+            label.set_x(gapLab, bar_index + off)
+    0
+
+f_openGap(showNdog, "1500-1700",   "1800-1801",   colNdog, "NDOG", 26)
+f_openGap(showNwog, "1500-1700:6", "1800-1801:1", colNwog, "NWOG", 34)
+
+// ---------- SMT SPOTTER 💔💗 ----------
+// Watches this chart AND its sister market (NQ ↔ ES).
+// At every swing it checks: did they agree? If one broke a
+// swing and the sister refused, a heart prints. Hover it!
+
+tipDef = "SMT = Smart Money Technique.\n\nNQ and ES are sisters. They almost always move together.\n\nSMT is when they stop agreeing at a swing:\none makes a new high or low, and the sister refuses.\n\nThat crack hints the move was a stop hunt,\nnot a real move.\n\n💔 at a high = the push UP looks fake.\n💗 at a low = the push DOWN looks fake.\n\nPJ's rule: SMT is a CLUE, not a requirement.\nIt only confirms a bias you already have.\nNo untagged draw = still no trade."
+
+tipBear = "💔 SMT at the highs.\n\nOne market made a HIGHER high here.\nThe sister market did NOT.\n\nThey stopped agreeing. That crack says the\npush UP may have been a stop hunt.\n\nClue points DOWN. But it is only a clue.\nIt must fit your model: draw, sweep,\ndisplacement, entry. Never trade SMT alone."
+
+tipBull = "💗 SMT at the lows.\n\nOne market made a LOWER low here.\nThe sister market did NOT.\n\nThey stopped agreeing. That crack says the\npush DOWN may have been a stop hunt.\n\nClue points UP. But it is only a clue.\nIt must fit your model: draw, sweep,\ndisplacement, entry. Never trade SMT alone."
+
+[pairHi, pairLo] = request.security(pairSym, timeframe.period, [high, low])
+
+smtPh = ta.pivothigh(high, smtLen, smtLen)
+smtPl = ta.pivotlow(low, smtLen, smtLen)
+
+var float prevHiA = na
+var float prevHiB = na
+var int   prevHiX = na
+var float prevLoA = na
+var float prevLoB = na
+var int   prevLoX = na
+
+bool bearNow = false
+bool bullNow = false
+
+// Which pool did the swing take? Names the CLOSEST tracked
+// level the swing crossed: Asia, London, New York, or Daily.
+f_sweptName(bool isLow, float p) =>
+    string best = ""
+    float bestD = 1e12
+    if isLow
+        if showAsia and asiaHas and not na(asiaLoV) and p < asiaLoV and asiaLoV - p < bestD
+            best := "ASIA LOW"
+            bestD := asiaLoV - p
+        if showLdn and ldnHas and not na(ldnLoV) and p < ldnLoV and ldnLoV - p < bestD
+            best := "LONDON LOW"
+            bestD := ldnLoV - p
+        if showNy and nyHas and not na(nyLoV) and p < nyLoV and nyLoV - p < bestD
+            best := "NY AM LOW"
+            bestD := nyLoV - p
+        if showDay and dayHas and not na(dayLoV) and p < dayLoV and dayLoV - p < bestD
+            best := "DAILY LOW"
+            bestD := dayLoV - p
+    else
+        if showAsia and asiaHas and not na(asiaHiV) and p > asiaHiV and p - asiaHiV < bestD
+            best := "ASIA HIGH"
+            bestD := p - asiaHiV
+        if showLdn and ldnHas and not na(ldnHiV) and p > ldnHiV and p - ldnHiV < bestD
+            best := "LONDON HIGH"
+            bestD := p - ldnHiV
+        if showNy and nyHas and not na(nyHiV) and p > nyHiV and p - nyHiV < bestD
+            best := "NY AM HIGH"
+            bestD := p - nyHiV
+        if showDay and dayHas and not na(dayHiV) and p > dayHiV and p - dayHiV < bestD
+            best := "DAILY HIGH"
+            bestD := p - dayHiV
+    best
+
+// --- swing highs ---
+if smtOn and not na(smtPh)
+    float curA = smtPh
+    float curB = pairHi[smtLen]
+    int   x    = bar_index - smtLen
+    bool inWindow = not smtSessOnly or asiaIn[smtLen] or nyIn[smtLen]
+    if not na(prevHiA) and not na(prevHiB) and not na(curB)
+        bool hhA = curA > prevHiA
+        bool hhB = curB > prevHiB
+        if hhA != hhB and inWindow
+            bearNow := true
+            string swept = smtNameOn ? f_sweptName(false, curA) : ""
+            string txt = swept == "" ? "💔 SMT" : "💔 SMT · swept " + swept
+            line.new(prevHiX, prevHiA, x, curA, color = colBear, style = line.style_dotted, width = smtLineW)
+            label.new(x, curA, txt, style = label.style_label_down, color = colBear,
+                 textcolor = f_textOn(colBear), size = labSize, tooltip = tipBear)
+    prevHiA := curA
+    prevHiB := curB
+    prevHiX := x
+
+// --- swing lows ---
+if smtOn and not na(smtPl)
+    float curA = smtPl
+    float curB = pairLo[smtLen]
+    int   x    = bar_index - smtLen
+    bool inWindow = not smtSessOnly or asiaIn[smtLen] or nyIn[smtLen]
+    if not na(prevLoA) and not na(prevLoB) and not na(curB)
+        bool llA = curA < prevLoA
+        bool llB = curB < prevLoB
+        if llA != llB and inWindow
+            bullNow := true
+            string swept = smtNameOn ? f_sweptName(true, curA) : ""
+            string txt = swept == "" ? "💗 SMT" : "💗 SMT · swept " + swept
+            line.new(prevLoX, prevLoA, x, curA, color = colBull, style = line.style_dotted, width = smtLineW)
+            label.new(x, curA, txt, style = label.style_label_up, color = colBull,
+                 textcolor = f_textOn(colBull), size = labSize, tooltip = tipBull)
+    prevLoA := curA
+    prevLoB := curB
+    prevLoX := x
+
+// ---------- '♡ WHAT IS SMT?' LESSON CARD (hover it!) ----------
+var table smtCard = table.new(position.bottom_right, 1, 1)
+if smtOn and smtCardOn and barstate.islast
+    table.cell(smtCard, 0, 0, "♡ what is SMT?", bgcolor = color.new(colBull, 15),
+         text_color = f_textOn(colBull), text_size = size.normal, tooltip = tipDef)
+
+// ---------- SOFT PASTEL SHADING ----------
+bgcolor(shadeOn and asiaIn ? color.new(colAsia, 90) : na)
+bgcolor(shadeOn and ldnIn  ? color.new(colLdn,  90) : na)
+bgcolor(shadeOn and nyIn   ? color.new(colNy,   90) : na)
+bgcolor(shadeOn and pmIn   ? color.new(colPm,   92) : na)
+bgcolor(shadeOn and orbIn  ? color.new(colOrb,  88) : na)
+
+// ---------- CORNER STORY CARD ----------
+f_status(bool show, bool has, bool inS, bool hiT, bool loT) =>
+    switch
+        not show    => "off"
+        not has     => "not yet"
+        inS         => "building…"
+        hiT and loT => "both swept 💖"
+        hiT         => "high swept ✔"
+        loT         => "low swept ✔"
+        =>             "untagged ♡"
+
+var table card = table.new(position.top_right, 2, 10)
+if cardOn and barstate.islast
+    table.cell(card, 0, 0, "♡ Asia",     bgcolor = color.new(colAsia, 15), text_color = f_textOn(colAsia), text_size = size.normal)
+    table.cell(card, 1, 0, f_status(showAsia, asiaHas, asiaIn, asiaHiDone, asiaLoDone), bgcolor = color.new(colAsia, 60), text_color = f_textOn(color.new(colAsia, 60)), text_size = size.normal)
+    table.cell(card, 0, 1, "♡ London",   bgcolor = color.new(colLdn, 15),  text_color = f_textOn(colLdn),  text_size = size.normal)
+    table.cell(card, 1, 1, f_status(showLdn, ldnHas, ldnIn, ldnHiDone, ldnLoDone),      bgcolor = color.new(colLdn, 60),  text_color = f_textOn(color.new(colLdn, 60)),  text_size = size.normal)
+    table.cell(card, 0, 2, "♡ NY AM",    bgcolor = color.new(colNy, 15),   text_color = f_textOn(colNy),   text_size = size.normal)
+    table.cell(card, 1, 2, f_status(showNy, nyHas, nyIn, nyHiDone, nyLoDone),           bgcolor = color.new(colNy, 60),   text_color = f_textOn(color.new(colNy, 60)),   text_size = size.normal)
+    table.cell(card, 0, 3, "♡ NY PM",    bgcolor = color.new(colPm, 15),   text_color = f_textOn(colPm),   text_size = size.normal)
+    table.cell(card, 1, 3, f_status(showPm, pmHas, pmIn, pmHiDone, pmLoDone),           bgcolor = color.new(colPm, 60),   text_color = f_textOn(color.new(colPm, 60)),   text_size = size.normal)
+    table.cell(card, 0, 4, "♡ Daily",    bgcolor = color.new(colDay, 15),  text_color = f_textOn(colDay),  text_size = size.normal)
+    table.cell(card, 1, 4, f_status(showDay, dayHas, false, dayHiDone, dayLoDone),      bgcolor = color.new(colDay, 60),  text_color = f_textOn(color.new(colDay, 60)),  text_size = size.normal)
+    table.cell(card, 0, 5, "♡ 4H",       bgcolor = color.new(col4h, 15),   text_color = f_textOn(col4h),   text_size = size.normal)
+    table.cell(card, 1, 5, f_status(show4h, h4Has, false, h4HiDone, h4LoDone),          bgcolor = color.new(col4h, 60),   text_color = f_textOn(color.new(col4h, 60)),   text_size = size.normal)
+    table.cell(card, 0, 6, "♡ 1H",       bgcolor = color.new(col1h, 15),   text_color = f_textOn(col1h),   text_size = size.normal)
+    table.cell(card, 1, 6, f_status(show1h, h1Has, false, h1HiDone, h1LoDone),          bgcolor = color.new(col1h, 60),   text_color = f_textOn(color.new(col1h, 60)),   text_size = size.normal)
+    table.cell(card, 0, 7, "♡ 30m",      bgcolor = color.new(col30, 15),   text_color = f_textOn(col30),   text_size = size.normal)
+    table.cell(card, 1, 7, f_status(show30, m30Has, false, m30HiDone, m30LoDone),       bgcolor = color.new(col30, 60),   text_color = f_textOn(color.new(col30, 60)),   text_size = size.normal)
+    table.cell(card, 0, 8, "♡ Weekly",   bgcolor = color.new(colWk, 15),   text_color = f_textOn(colWk),   text_size = size.normal)
+    table.cell(card, 1, 8, f_status(showWk, wkHas, false, wkHiDone, wkLoDone),          bgcolor = color.new(colWk, 60),   text_color = f_textOn(color.new(colWk, 60)),   text_size = size.normal)
+    table.cell(card, 0, 9, "♡ ORB",      bgcolor = color.new(colOrb, 15),  text_color = f_textOn(colOrb),  text_size = size.normal)
+    table.cell(card, 1, 9, showOrb ? (orbIn ? "building…" : orbHas ? "locked ♡" : "not yet") : "off", bgcolor = color.new(colOrb, 60), text_color = f_textOn(color.new(colOrb, 60)), text_size = size.normal)
+
+// ---------- BASE HIT RULER 📏 ----------
+// What does 25 points look like? Two dotted lines and two
+// soft zones. One zone = the trip UP to a base hit. The
+// other = the trip DOWN. Price crosses the zone or it
+// doesn't. That's the whole tool.
+var line  rUpLine  = na
+var line  rDnLine  = na
+var line  rMidLine = na
+var label rUpLab   = na
+var label rDnLab   = na
+var box   rUpBox   = na
+var box   rDnBox   = na
+
+if rulerOn and barstate.islast
+    line.delete(rUpLine)
+    line.delete(rDnLine)
+    line.delete(rMidLine)
+    label.delete(rUpLab)
+    label.delete(rDnLab)
+    box.delete(rUpBox)
+    box.delete(rDnBox)
+
+    float rBase = rulerAnchor > 0 ? rulerAnchor : close
+    int rx1 = bar_index - 20
+    int rx2 = bar_index + 10
+
+    // the trip, lit up as a zone
+    if rulerUp
+        rUpBox := box.new(rx1, rBase + rulerPts, rx2, rBase, border_color = color.new(rulerCUp, 100), bgcolor = color.new(rulerCUp, 88))
+    if rulerDn
+        rDnBox := box.new(rx1, rBase, rx2, rBase - rulerPts, border_color = color.new(rulerCDn, 100), bgcolor = color.new(rulerCDn, 88))
+
+    rMidLine := line.new(rx1, rBase, rx2, rBase, xloc.bar_index, extend.none, color.new(rulerCMid, 30), line.style_dashed, 1)
+
+    if rulerUp
+        rUpLine := line.new(rx1, rBase + rulerPts, rx2, rBase + rulerPts, xloc.bar_index, extend.none, rulerCUp, line.style_dotted, 2)
+        rUpLab  := label.new(rx2, rBase + rulerPts, "+" + str.tostring(rulerPts, "#.##") + " pts — base hit UP",
+             style = label.style_label_left, color = color.new(rulerCUp, 20), textcolor = f_textOn(rulerCUp), size = size.small)
+    if rulerDn
+        rDnLine := line.new(rx1, rBase - rulerPts, rx2, rBase - rulerPts, xloc.bar_index, extend.none, rulerCDn, line.style_dotted, 2)
+        rDnLab  := label.new(rx2, rBase - rulerPts, "−" + str.tostring(rulerPts, "#.##") + " pts — base hit DOWN",
+             style = label.style_label_left, color = color.new(rulerCDn, 20), textcolor = f_textOn(rulerCDn), size = size.small)
+
+// ---------- ALERTS (plain words) ----------
+alertcondition(asiaHiTag, "Asia high tagged",     "Price tagged the ASIA HIGH.")
+alertcondition(asiaLoTag, "Asia low tagged",      "Price tagged the ASIA LOW.")
+alertcondition(ldnHiTag,  "London high tagged",   "Price tagged the LONDON HIGH.")
+alertcondition(ldnLoTag,  "London low tagged",    "Price tagged the LONDON LOW.")
+alertcondition(nyHiTag,   "NY AM high tagged",    "Price tagged the NY AM HIGH.")
+alertcondition(nyLoTag,   "NY AM low tagged",     "Price tagged the NY AM LOW.")
+alertcondition(pmHiTag,   "NY PM high tagged",    "Price tagged the NY PM HIGH.")
+alertcondition(pmLoTag,   "NY PM low tagged",     "Price tagged the NY PM LOW.")
+alertcondition(wkHiTag,   "Weekly high tagged",   "Price tagged LAST WEEK'S HIGH.")
+alertcondition(wkLoTag,   "Weekly low tagged",    "Price tagged LAST WEEK'S LOW.")
+alertcondition(dayHiTag,  "Daily high tagged",    "Price tagged YESTERDAY'S DAILY HIGH.")
+alertcondition(dayLoTag,  "Daily low tagged",     "Price tagged YESTERDAY'S DAILY LOW.")
+alertcondition(h4HiTag,   "4H high tagged",       "Price tagged the PREVIOUS 4-HOUR HIGH.")
+alertcondition(h4LoTag,   "4H low tagged",        "Price tagged the PREVIOUS 4-HOUR LOW.")
+alertcondition(h1HiTag,   "1H high tagged",       "Price tagged the PREVIOUS 1-HOUR HIGH.")
+alertcondition(h1LoTag,   "1H low tagged",        "Price tagged the PREVIOUS 1-HOUR LOW.")
+alertcondition(m30HiTag,  "30m high tagged",      "Price tagged the PREVIOUS 30-MINUTE HIGH.")
+alertcondition(m30LoTag,  "30m low tagged",       "Price tagged the PREVIOUS 30-MINUTE LOW.")
+alertcondition(orbHiTag,  "ORB high broken",      "Price broke the ORB HIGH (9:30-9:45 range).")
+alertcondition(orbLoTag,  "ORB low broken",       "Price broke the ORB LOW (9:30-9:45 range).")
+alertcondition(bearNow,   "SMT at the highs 💔",  "SMT crack at the highs. The sisters stopped agreeing. Clue points down.")
+alertcondition(bullNow,   "SMT at the lows 💗",   "SMT crack at the lows. The sisters stopped agreeing. Clue points up.")

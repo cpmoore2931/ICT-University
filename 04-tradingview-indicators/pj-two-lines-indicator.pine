@@ -1,0 +1,67 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  TWO LINES — the whole game, nothing else.
+//
+//  Yesterday's HIGH  → buy stops rest above it.
+//  Yesterday's LOW   → sell stops rest below it.
+//
+//  One question: which one gets taken today?
+//  Guess before 9:30. Watch. Write down what happened. That's the drill.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Two Lines — where are the stops?", "Two Lines", overlay = true,
+     max_lines_count = 10, max_labels_count = 20)
+
+cPool  = #B97516            // amber — untouched pool (the magnet)
+cTaken = color.new(color.gray, 40)
+
+// yesterday's high and low
+prevH = request.security(syminfo.tickerid, "D", high[1], barmerge.gaps_off, barmerge.lookahead_on)
+prevL = request.security(syminfo.tickerid, "D", low[1],  barmerge.gaps_off, barmerge.lookahead_on)
+
+newDay = ta.change(time("D")) != 0
+
+var line  hiLine = na
+var line  loLine = na
+var label hiLab  = na
+var label loLab  = na
+var bool hiTaken = false
+var bool loTaken = false
+
+if newDay and not na(prevH)
+    line.delete(hiLine)
+    line.delete(loLine)
+    label.delete(hiLab)
+    label.delete(loLab)
+    hiTaken := false
+    loTaken := false
+    hiLine := line.new(bar_index, prevH, bar_index + 1, prevH, xloc.bar_index, extend.right, color.new(cPool, 10), line.style_solid, 2)
+    loLine := line.new(bar_index, prevL, bar_index + 1, prevL, xloc.bar_index, extend.right, color.new(cPool, 10), line.style_solid, 2)
+    hiLab := label.new(bar_index, prevH, "Yesterday's HIGH — buy stops above  $$$", style = label.style_none, textcolor = color.new(cPool, 0), size = size.normal)
+    loLab := label.new(bar_index, prevL, "Yesterday's LOW — sell stops below  $$$", style = label.style_none, textcolor = color.new(cPool, 0), size = size.normal)
+
+// the moment a pool gets taken
+if not hiTaken and not na(hiLine) and high > line.get_y1(hiLine)
+    hiTaken := true
+    line.set_color(hiLine, cTaken)
+    label.set_textcolor(hiLab, cTaken)
+    label.new(bar_index, high, "TAKEN ✓", style = label.style_label_down, color = color.new(cPool, 0), textcolor = color.white, size = size.normal)
+
+if not loTaken and not na(loLine) and low < line.get_y1(loLine)
+    loTaken := true
+    line.set_color(loLine, cTaken)
+    label.set_textcolor(loLab, cTaken)
+    label.new(bar_index, low, "TAKEN ✓", style = label.style_label_up, color = color.new(cPool, 0), textcolor = color.white, size = size.normal)
+
+// the drill, always on screen
+var table tb = table.new(position.bottom_right, 1, 3, bgcolor = color.new(color.black, 15), border_width = 1)
+if barstate.islast
+    status = hiTaken and loTaken ? "Both taken — day's story is told." :
+         hiTaken ? "HIGH taken. Low still untouched — that's the magnet now." :
+         loTaken ? "LOW taken. High still untouched — that's the magnet now." :
+         "Nothing taken yet. Which one goes first?"
+    table.cell(tb, 0, 0, "WHERE ARE THE STOPS?", text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(tb, 0, 1, status, text_color = color.new(cPool, 0), text_size = size.small, text_halign = text.align_left)
+    table.cell(tb, 0, 2, "Guess before 9:30 · watch · journal it", text_color = color.new(color.white, 35), text_size = size.tiny, text_halign = text.align_left)
+
+alertcondition(not hiTaken[1] and high > prevH, "High taken", "Two Lines: yesterday's HIGH just got taken")
+alertcondition(not loTaken[1] and low < prevL, "Low taken", "Two Lines: yesterday's LOW just got taken")

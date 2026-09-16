@@ -1,0 +1,141 @@
+//@version=6
+// ============================================================
+//  FILE VERSION 2 — boxes now start right at the gap candles
+//
+//  15-MINUTE FVG — Pretty Edition, made for Page 🎀
+//
+//  What it does, in plain words:
+//  • Watches the 15-minute chart for you, even while you
+//    sit on the 1-minute. Only 15m gaps. Nothing else.
+//  • A fair value gap = a 3-candle move so fast it left a
+//    hole. Price loves to come back and fill the hole.
+//  • Pink box = bullish gap (support under price).
+//  • Purple box = bearish gap (resistance over price).
+//  • Dashed middle line = the CE, the 50% of the gap.
+//    Wicks holding the CE = the gap has real weight.
+//  • When price fully closes through a gap, it's spent —
+//    the box fades away (or hides, your choice).
+//  • Alerts can ding you when price comes back into a gap.
+//
+//  These boxes are ENTRY zones, not signals. The trade still
+//  needs the whole model: draw, sweep, displacement, entry.
+// ============================================================
+indicator("15m FVG — Pretty", "15m FVG ♡", overlay = true,
+     max_boxes_count = 60, max_lines_count = 60)
+
+// ---------- SETTINGS ----------
+grpLook = "How it looks"
+keepN      = input.int(6, "How many gaps to keep on the chart", minval = 1, maxval = 15, group = grpLook,
+     tooltip = "Only the newest gaps stay. Old ones clear off so the chart never turns into chop suey.")
+showCE     = input.bool(true, "Show the CE line (middle of the gap)", group = grpLook)
+hideFilled = input.bool(true, "Hide a gap once price closes through it", group = grpLook,
+     tooltip = "Off = the spent gap stays but fades out.")
+
+grpCol = "Colors (make it yours)"
+colBull = input.color(#E0218A, "Bullish gap (support) ♡",   group = grpCol)   // hot pink
+colBear = input.color(#9D4EDD, "Bearish gap (resistance) ♡", group = grpCol)   // orchid purple
+
+// ---------- 15-MINUTE DATA (confirmed candles only) ----------
+[c1h, c1l, c3h, c3l, t2, t3] = request.security(syminfo.tickerid, "15",
+     [high[3], low[3], high[1], low[1], time[2], time[1]])
+
+bool new15 = ta.change(t3) != 0
+bool tfOk  = timeframe.in_seconds() <= timeframe.in_seconds("15")
+
+// ---------- STORAGE ----------
+var boxes   = array.new<box>()
+var mids    = array.new<line>()
+var types   = array.new<int>()     //  1 = bullish, -1 = bearish
+var tops    = array.new<float>()
+var bots    = array.new<float>()
+var touched = array.new<bool>()
+var filled  = array.new<bool>()
+var madeAt  = array.new<int>()     // chart bar the box was made on
+
+f_add(int t, float top, float bot, int leftT) =>
+    color col = t == 1 ? colBull : colBear
+    box b = box.new(leftT, top, time, bot, xloc = xloc.bar_time,
+         border_color = color.new(col, 45), bgcolor = color.new(col, 80),
+         text = "♡ 15m", text_color = color.new(col, 20),
+         text_size = size.small, text_halign = text.align_right)
+    line m = na
+    if showCE
+        m := line.new(leftT, (top + bot) / 2, time, (top + bot) / 2,
+             xloc = xloc.bar_time,
+             color = color.new(col, 35), style = line.style_dashed, width = 1)
+    array.push(boxes, b)
+    array.push(mids, m)
+    array.push(types, t)
+    array.push(tops, top)
+    array.push(bots, bot)
+    array.push(touched, false)
+    array.push(filled, false)
+    array.push(madeAt, bar_index)
+    if array.size(boxes) > keepN
+        box.delete(array.shift(boxes))
+        line.delete(array.shift(mids))
+        array.shift(types)
+        array.shift(tops)
+        array.shift(bots)
+        array.shift(touched)
+        array.shift(filled)
+        array.shift(madeAt)
+
+// ---------- NEW GAP ON THE 15 ----------
+bool newBull = false
+bool newBear = false
+if tfOk and new15 and not na(c1h) and not na(c3l)
+    if c3l > c1h
+        newBull := true
+        f_add(1, c3l, c1h, t2)
+    if c3h < c1l
+        newBear := true
+        f_add(-1, c1l, c3h, t2)
+
+// ---------- KEEP GAPS ALIVE, WATCH FOR TOUCHES & FILLS ----------
+bool bullTouch = false
+bool bearTouch = false
+if array.size(boxes) > 0
+    for i = 0 to array.size(boxes) - 1
+        if array.get(filled, i)
+            continue
+        box b  = array.get(boxes, i)
+        line m = array.get(mids, i)
+        box.set_right(b, time)
+        if not na(m)
+            line.set_x2(m, time)
+        int   t   = array.get(types, i)
+        float top = array.get(tops, i)
+        float bot = array.get(bots, i)
+        color col = t == 1 ? colBull : colBear
+        bool  old = bar_index > array.get(madeAt, i)
+        if t == 1
+            if not array.get(touched, i) and low <= top and old
+                array.set(touched, i, true)
+                bullTouch := true
+            if close < bot
+                array.set(filled, i, true)
+                if hideFilled
+                    box.delete(b)
+                    line.delete(m)
+                else
+                    box.set_bgcolor(b, color.new(col, 93))
+                    box.set_border_color(b, color.new(col, 80))
+        else
+            if not array.get(touched, i) and high >= bot and old
+                array.set(touched, i, true)
+                bearTouch := true
+            if close > top
+                array.set(filled, i, true)
+                if hideFilled
+                    box.delete(b)
+                    line.delete(m)
+                else
+                    box.set_bgcolor(b, color.new(col, 93))
+                    box.set_border_color(b, color.new(col, 80))
+
+// ---------- ALERTS (plain words) ----------
+alertcondition(newBull,   "New 15m bullish gap",  "A new 15m bullish gap just formed.")
+alertcondition(newBear,   "New 15m bearish gap",  "A new 15m bearish gap just formed.")
+alertcondition(bullTouch, "Price in bullish gap", "Price came back into a 15m bullish gap. Eyes up.")
+alertcondition(bearTouch, "Price in bearish gap", "Price came back into a 15m bearish gap. Eyes up.")

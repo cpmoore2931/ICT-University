@@ -1,0 +1,114 @@
+//@version=6
+// ============================================================
+//  SMT SPOTTER — Pretty Edition, made for Page 🎀
+//
+//  What it does, in plain words:
+//  • Watches your chart AND its sister market (NQ ↔ ES).
+//  • At every swing, it checks: did they agree?
+//  • If one made a new high but the sister did NOT,
+//    that's a crack. 💔 appears at the swing high.
+//  • If one made a new low but the sister did NOT,
+//    💗 appears at the swing low.
+//  • HOVER any heart and it tells you what SMT means.
+//  • A little "♡ what is SMT?" card sits in the corner.
+//    Hover it any time for the full plain-words lesson.
+//
+//  Remember: SMT is a CLUE, not a green light. It only
+//  confirms a bias you already have. It is never the trade.
+// ============================================================
+indicator("SMT Spotter — Pretty", "SMT ♡", overlay = true,
+     max_lines_count = 200, max_labels_count = 200)
+
+// ---------- SETTINGS ----------
+grpMain = "The basics"
+pairSym = input.symbol("CME_MINI:ES1!", "Sister market", group = grpMain,
+     tooltip = "The market to compare against. On NQ or MNQ, use ES. PJ calls ES the big brother.")
+len = input.int(5, "Swing size (candles on each side)", minval = 2, maxval = 20, group = grpMain,
+     tooltip = "How many candles a swing needs on each side to count. Bigger number = fewer, bigger swings. The heart shows up this many candles after the swing, because a swing is not real until candles form on both sides of it.")
+
+grpLook = "How it looks"
+txtChoice = input.string("Normal", "Heart label size",
+     options = ["Small", "Normal", "Big", "Huge"], group = grpLook)
+lineW = input.int(2, "Connector line thickness", minval = 1, maxval = 6, group = grpLook)
+cardOn = input.bool(true, "Show the '♡ what is SMT?' corner card", group = grpLook)
+
+grpCol = "Colors (make it yours)"
+colBear = input.color(#9D4EDD, "SMT at highs 💔", group = grpCol)   // orchid purple
+colBull = input.color(#E0218A, "SMT at lows 💗",  group = grpCol)   // hot pink
+
+labSize = txtChoice == "Huge" ? size.huge :
+     txtChoice == "Big" ? size.large :
+     txtChoice == "Normal" ? size.normal : size.small
+
+// Pick white or dark plum text, whichever reads best on the color.
+f_textOn(color c) =>
+    bright = 0.299 * color.r(c) + 0.587 * color.g(c) + 0.114 * color.b(c)
+    bright > 150 ? color.rgb(74, 14, 46) : color.white
+
+// ---------- THE PLAIN-WORDS LESSONS (shown on hover) ----------
+tipDef = "SMT = Smart Money Technique.\n\nNQ and ES are sisters. They almost always move together.\n\nSMT is when they stop agreeing at a swing:\none makes a new high or low, and the sister refuses.\n\nThat crack hints the move was a stop hunt,\nnot a real move.\n\n💔 at a high = the push UP looks fake.\n💗 at a low = the push DOWN looks fake.\n\nPJ's rule: SMT is a CLUE, not a requirement.\nIt only confirms a bias you already have.\nNo untagged draw = still no trade."
+
+tipBear = "💔 SMT at the highs.\n\nOne market made a HIGHER high here.\nThe sister market did NOT.\n\nThey stopped agreeing. That crack says the\npush UP may have been a stop hunt.\n\nClue points DOWN. But it is only a clue.\nIt must fit your model: draw, sweep,\ndisplacement, entry. Never trade SMT alone."
+
+tipBull = "💗 SMT at the lows.\n\nOne market made a LOWER low here.\nThe sister market did NOT.\n\nThey stopped agreeing. That crack says the\npush DOWN may have been a stop hunt.\n\nClue points UP. But it is only a clue.\nIt must fit your model: draw, sweep,\ndisplacement, entry. Never trade SMT alone."
+
+// ---------- DATA ----------
+pairHi = request.security(pairSym, timeframe.period, high)
+pairLo = request.security(pairSym, timeframe.period, low)
+
+ph = ta.pivothigh(high, len, len)
+pl = ta.pivotlow(low, len, len)
+
+var float prevHiA = na
+var float prevHiB = na
+var int   prevHiX = na
+var float prevLoA = na
+var float prevLoB = na
+var int   prevLoX = na
+
+bool bearNow = false
+bool bullNow = false
+
+// ---------- SWING HIGHS ----------
+if not na(ph)
+    float curA = ph
+    float curB = pairHi[len]
+    int   x    = bar_index - len
+    if not na(prevHiA) and not na(prevHiB) and not na(curB)
+        bool hhA = curA > prevHiA
+        bool hhB = curB > prevHiB
+        if hhA != hhB
+            bearNow := true
+            line.new(prevHiX, prevHiA, x, curA, color = colBear, style = line.style_dotted, width = lineW)
+            label.new(x, curA, "💔 SMT", style = label.style_label_down, color = colBear,
+                 textcolor = f_textOn(colBear), size = labSize, tooltip = tipBear)
+    prevHiA := curA
+    prevHiB := curB
+    prevHiX := x
+
+// ---------- SWING LOWS ----------
+if not na(pl)
+    float curA = pl
+    float curB = pairLo[len]
+    int   x    = bar_index - len
+    if not na(prevLoA) and not na(prevLoB) and not na(curB)
+        bool llA = curA < prevLoA
+        bool llB = curB < prevLoB
+        if llA != llB
+            bullNow := true
+            line.new(prevLoX, prevLoA, x, curA, color = colBull, style = line.style_dotted, width = lineW)
+            label.new(x, curA, "💗 SMT", style = label.style_label_up, color = colBull,
+                 textcolor = f_textOn(colBull), size = labSize, tooltip = tipBull)
+    prevLoA := curA
+    prevLoB := curB
+    prevLoX := x
+
+// ---------- CORNER LESSON CARD (hover it!) ----------
+var table card = table.new(position.bottom_right, 1, 1)
+if cardOn and barstate.islast
+    table.cell(card, 0, 0, "♡ what is SMT?", bgcolor = color.new(colBull, 15),
+         text_color = f_textOn(colBull), text_size = size.normal, tooltip = tipDef)
+
+// ---------- ALERTS (plain words) ----------
+alertcondition(bearNow, "SMT at the highs 💔", "SMT crack at the highs. The sisters stopped agreeing. Clue points down.")
+alertcondition(bullNow, "SMT at the lows 💗",  "SMT crack at the lows. The sisters stopped agreeing. Clue points up.")

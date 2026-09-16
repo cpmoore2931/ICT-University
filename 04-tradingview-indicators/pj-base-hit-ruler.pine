@@ -1,0 +1,70 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  BASE HIT RULER — what does 25 points look like?
+//
+//  Two dotted lines and two soft-colored zones. No numbers to figure out.
+//  One zone = the trip UP to a base hit. The other = the trip DOWN.
+//  Price either crosses the zone or it doesn't. That's the whole tool.
+//
+//  NEW: pick your own colors in settings. Label text flips between
+//  white and dark plum on its own so words always stay readable.
+//
+//  Tip: type your entry price in settings and the ruler locks to it.
+//  Leave it at 0 and the ruler just follows the live price.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Base Hit Ruler — 25 points", "25pt Ruler", overlay = true,
+     max_lines_count = 10, max_labels_count = 10, max_boxes_count = 10)
+
+pts    = input.float(25.0, "How many points?", minval = 1, step = 5)
+anchor = input.float(0.0,  "My entry price (0 = follow live price)", minval = 0)
+showUp = input.bool(true,  "Show the UP zone (long trip)")
+showDn = input.bool(true,  "Show the DOWN zone (short trip)")
+
+grpCol = "Colors (make it yours)"
+cUp  = input.color(#1F6F3F, "UP zone",     group = grpCol)
+cDn  = input.color(#A33127, "DOWN zone",   group = grpCol)
+cMid = input.color(color.gray, "Middle line", group = grpCol)
+
+// Pick white or dark plum text, whichever reads best on the color.
+f_textOn(color c) =>
+    bright = 0.299 * color.r(c) + 0.587 * color.g(c) + 0.114 * color.b(c)
+    bright > 150 ? color.rgb(74, 14, 46) : color.white
+
+base = anchor > 0 ? anchor : close
+
+var line  upLine  = na
+var line  dnLine  = na
+var line  midLine = na
+var label upLab   = na
+var label dnLab   = na
+var box   upBox   = na
+var box   dnBox   = na
+
+if barstate.islast
+    line.delete(upLine)
+    line.delete(dnLine)
+    line.delete(midLine)
+    label.delete(upLab)
+    label.delete(dnLab)
+    box.delete(upBox)
+    box.delete(dnBox)
+
+    x1 = bar_index - 20
+    x2 = bar_index + 10
+
+    // the trip, lit up as a zone
+    if showUp
+        upBox := box.new(x1, base + pts, x2, base, border_color = color.new(cUp, 100), bgcolor = color.new(cUp, 88))
+    if showDn
+        dnBox := box.new(x1, base, x2, base - pts, border_color = color.new(cDn, 100), bgcolor = color.new(cDn, 88))
+
+    midLine := line.new(x1, base, x2, base, xloc.bar_index, extend.none, color.new(cMid, 30), line.style_dashed, 1)
+
+    if showUp
+        upLine := line.new(x1, base + pts, x2, base + pts, xloc.bar_index, extend.none, cUp, line.style_dotted, 2)
+        upLab  := label.new(x2, base + pts, "+" + str.tostring(pts, "#.##") + " pts — base hit UP",
+             style = label.style_label_left, color = color.new(cUp, 20), textcolor = f_textOn(cUp), size = size.small)
+    if showDn
+        dnLine := line.new(x1, base - pts, x2, base - pts, xloc.bar_index, extend.none, cDn, line.style_dotted, 2)
+        dnLab  := label.new(x2, base - pts, "−" + str.tostring(pts, "#.##") + " pts — base hit DOWN",
+             style = label.style_label_left, color = color.new(cDn, 20), textcolor = f_textOn(cDn), size = size.small)

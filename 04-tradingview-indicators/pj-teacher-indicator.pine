@@ -1,0 +1,223 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  PJ TEACHER v2 — learn the ICT 2022 model one lesson at a time (NQ, 1–15m)
+//
+//  v2 = decluttered. Only STRONG swings count. Sweeps are small diamonds.
+//  Only shifts talk. Tiny gaps are ignored. Dead gaps disappear.
+//
+//  Lesson 1 · The clock        Lesson 2 · Liquidity pools
+//  Lesson 3 · Sweeps           Lesson 4 · Shifts
+//  Lesson 5 · Gaps             Lesson 6 · Full sequence
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("PJ Teacher — ICT 2022 lessons (NQ)", "PJ Teacher", overlay = true,
+     max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+NY = "America/New_York"
+
+lessonStr = input.string("6 · Full sequence", "Lesson (learn ONE at a time)",
+     options = ["1 · The clock", "2 · Liquidity pools", "3 · Sweeps", "4 · Shifts", "5 · Gaps", "6 · Full sequence"])
+strictness = input.string("Calm (less marks)", "How much should I mark?",
+     options = ["Calm (less marks)", "Busy (more marks)"])
+
+L = lessonStr == "1 · The clock" ? 1 :
+     lessonStr == "2 · Liquidity pools" ? 2 :
+     lessonStr == "3 · Sweeps" ? 3 :
+     lessonStr == "4 · Shifts" ? 4 :
+     lessonStr == "5 · Gaps" ? 5 : 6
+
+calm = strictness == "Calm (less marks)"
+pivLen   = calm ? 5 : 3          // swing strength: bars on each side
+coolBars = calm ? 15 : 8         // quiet time between sweep marks
+dispMult = calm ? 1.3 : 1.0      // displacement: body ≥ ATR ×
+gapMin   = calm ? 0.25 : 0.10    // ignore gaps smaller than ATR ×
+maxGaps  = 8                     // most gaps shown at once
+
+showTime   = L == 1 or L == 6
+showPools  = L == 2 or L == 6
+showSweeps = L == 3 or L == 4 or L == 6
+showShifts = L == 4 or L == 6
+showGaps   = L == 5 or L == 6
+showSwings = L == 3 or L == 4
+
+// colors — same code as the wall chart
+cSweep = #B97516   // amber  = liquidity & sweeps
+cShift = #2E6DA8   // blue   = structure shifts
+cEntry = #247A54   // green  = gaps & go-time
+cStop  = #B23A2F   // red    = no-trade
+cTime  = #6A4FA3   // violet = the clock
+
+inSess(s) => not na(time(timeframe.period, s, NY))
+
+// ─────────────── LESSON 1 · THE CLOCK ──────────────────────────────────────
+bgcolor(showTime and inSess("0200-0500") ? color.new(cTime, 90)  : na, title = "London 2–5")
+bgcolor(showTime and inSess("0830-1100") ? color.new(cEntry, 90) : na, title = "AM hunt 8:30–11")
+bgcolor(showTime and inSess("1200-1300") ? color.new(cStop, 85)  : na, title = "LUNCH — never trade")
+bgcolor(showTime and inSess("1330-1600") ? color.new(cEntry, 93) : na, title = "PM 1:30–4")
+
+var line  midLine  = na
+var line  l830Line = na
+newMid  = inSess("0000-0001") and not inSess("0000-0001")[1]
+new0830 = inSess("0830-0831") and not inSess("0830-0831")[1]
+if showTime and newMid
+    line.delete(midLine)
+    midLine := line.new(bar_index, open, bar_index + 1, open, xloc.bar_index, extend.right, color.new(cTime, 30), line.style_dotted, 2)
+if showTime and new0830
+    line.delete(l830Line)
+    l830Line := line.new(bar_index, open, bar_index + 1, open, xloc.bar_index, extend.right, color.new(cTime, 30), line.style_dashed, 2)
+
+// ─────────────── LESSON 2 · LIQUIDITY POOLS ────────────────────────────────
+trackRange(string sess, string txt) =>
+    var float hi  = na
+    var float lo  = na
+    var line  hiL = na
+    var line  loL = na
+    var label hLb = na
+    var label lLb = na
+    active = inSess(sess)
+    if active
+        if not active[1]
+            hi := high
+            lo := low
+        else
+            hi := math.max(hi, high)
+            lo := math.min(lo, low)
+    if active[1] and not active and showPools
+        line.delete(hiL)
+        line.delete(loL)
+        label.delete(hLb)
+        label.delete(lLb)
+        hiL := line.new(bar_index - 1, hi, bar_index, hi, xloc.bar_index, extend.right, color.new(cSweep, 20), line.style_solid, 2)
+        loL := line.new(bar_index - 1, lo, bar_index, lo, xloc.bar_index, extend.right, color.new(cSweep, 20), line.style_solid, 2)
+        hLb := label.new(bar_index, hi, txt + " high $$$", style = label.style_none, textcolor = color.new(cSweep, 10), size = size.small)
+        lLb := label.new(bar_index, lo, txt + " low $$$", style = label.style_none, textcolor = color.new(cSweep, 10), size = size.small)
+
+trackRange("0200-0500", "London")
+trackRange("0930-1200", "AM")
+trackRange("1200-1330", "Lunch")
+trackRange("1330-1600", "PM")
+
+// ─────────────── LESSONS 3–4 · SWEEPS & SHIFTS ─────────────────────────────
+atr  = ta.atr(14)
+disp = math.abs(close - open) >= atr * dispMult
+
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+plotshape(showSwings and not na(ph), title = "Swing high", style = shape.triangledown, location = location.abovebar, offset = -5, color = color.new(cShift, 55), size = size.tiny)
+plotshape(showSwings and not na(pl), title = "Swing low",  style = shape.triangleup,   location = location.belowbar, offset = -5, color = color.new(cShift, 55), size = size.tiny)
+
+var float lastSH = na
+var float lastSL = na
+var int sweptUpBar = na
+var int sweptDnBar = na
+var int lastMarkBar = 0
+if not na(ph)
+    lastSH := ph
+if not na(pl)
+    lastSL := pl
+
+quiet = bar_index - lastMarkBar > coolBars
+sweepUpSig = showSweeps and quiet and not na(lastSH) and high > lastSH and close < lastSH
+sweepDnSig = showSweeps and quiet and not na(lastSL) and low < lastSL and close > lastSL
+
+// sweeps = small amber diamonds. quiet marks, no chatter.
+plotshape(sweepUpSig, title = "Sweep of highs", style = shape.diamond, location = location.abovebar, color = color.new(cSweep, 0), size = size.small, text = "sweep", textcolor = color.new(cSweep, 0))
+plotshape(sweepDnSig, title = "Sweep of lows",  style = shape.diamond, location = location.belowbar, color = color.new(cSweep, 0), size = size.small, text = "sweep", textcolor = color.new(cSweep, 0))
+
+if sweepUpSig
+    sweptUpBar := bar_index
+    lastMarkBar := bar_index
+    lastSH := na
+if sweepDnSig
+    sweptDnBar := bar_index
+    lastMarkBar := bar_index
+    lastSL := na
+
+mssDn = showShifts and not na(lastSL) and close < lastSL and disp and not na(sweptUpBar) and bar_index - sweptUpBar <= 60
+mssUp = showShifts and not na(lastSH) and close > lastSH and disp and not na(sweptDnBar) and bar_index - sweptDnBar <= 60
+
+if mssDn
+    label.new(bar_index, high, "SHIFT ▼", style = label.style_label_down, color = color.new(cShift, 5), textcolor = color.white, size = size.small)
+    lastSL := na
+    sweptUpBar := na
+if mssUp
+    label.new(bar_index, low, "SHIFT ▲", style = label.style_label_up, color = color.new(cShift, 5), textcolor = color.white, size = size.small)
+    lastSH := na
+    sweptDnBar := na
+
+// ─────────────── LESSON 5 · GAPS ───────────────────────────────────────────
+bodyOK  = math.abs(close[1] - open[1]) >= atr * dispMult
+bullGapOK = low > high[2] and (low - high[2]) >= atr * gapMin
+bearGapOK = high < low[2] and (low[2] - high) >= atr * gapMin
+bullFVG = showGaps and bullGapOK and bodyOK
+bearFVG = showGaps and bearGapOK and bodyOK
+
+var array<box> fvgB   = array.new<box>()
+var array<int> fvgDir = array.new<int>()
+if bullFVG
+    array.push(fvgB, box.new(bar_index - 2, low, bar_index + 25, high[2], border_color = color.new(cEntry, 35), bgcolor = color.new(cEntry, 80)))
+    array.push(fvgDir, 1)
+if bearFVG
+    array.push(fvgB, box.new(bar_index - 2, low[2], bar_index + 25, high, border_color = color.new(cEntry, 35), bgcolor = color.new(cEntry, 80)))
+    array.push(fvgDir, -1)
+
+// too many boxes = clutter. keep only the newest few.
+while array.size(fvgB) > maxGaps
+    box.delete(array.get(fvgB, 0))
+    array.remove(fvgB, 0)
+    array.remove(fvgDir, 0)
+
+// a CLOSE through the far side kills the gap — it just disappears.
+if array.size(fvgB) > 0
+    int i = 0
+    while i < array.size(fvgB)
+        b = array.get(fvgB, i)
+        d = array.get(fvgDir, i)
+        dead = bar_index > box.get_right(b) or (d == 1 ? close < box.get_bottom(b) : close > box.get_top(b))
+        if dead
+            box.delete(b)
+            array.remove(fvgB, i)
+            array.remove(fvgDir, i)
+        else
+            i += 1
+
+// ─────────────── THE TEACHING PANEL ────────────────────────────────────────
+var table tb = table.new(position.bottom_right, 1, 4, bgcolor = color.new(color.black, 15), border_width = 1)
+if barstate.islast
+    string title = ""
+    string watch = ""
+    string rule  = ""
+    string hw    = ""
+    if L == 1
+        title := "LESSON 1 · THE CLOCK"
+        watch := "Purple = London. Green = hunt time. RED = lunch."
+        rule  := "Time first, then price."
+        hw    := "Homework: watch 8:30, 9:30, and 1:30 today."
+    else if L == 2
+        title := "LESSON 2 · LIQUIDITY POOLS"
+        watch := "Amber lines = session highs & lows. Stops rest there."
+        rule  := "Price is a paperclip. Lines are magnets."
+        hw    := "Homework: count how many lines get touched."
+    else if L == 3
+        title := "LESSON 3 · SWEEPS"
+        watch := "Amber diamond = wick through a swing, close back in."
+        rule  := "The sweep is bait. Never trade it."
+        hw    := "Homework: find 5 sweeps. What came after each?"
+    else if L == 4
+        title := "LESSON 4 · SHIFTS"
+        watch := "Blue SHIFT = big candle through the other swing, after a sweep."
+        rule  := "No sweep first = not a shift."
+        hw    := "Homework: find diamond→SHIFT pairs today."
+    else if L == 5
+        title := "LESSON 5 · GAPS"
+        watch := "Green box = a gap born with force. Dead gaps vanish."
+        rule  := "Wicks may poke it. Only a CLOSE kills it."
+        hw    := "Homework: watch one gap get revisited."
+    else
+        title := "LESSON 6 · FULL SEQUENCE"
+        watch := "diamond → SHIFT → green box → entry → magnet"
+        rule  := "Any piece missing = NO TRADE. Lunch = NO TRADE."
+        hw    := "Homework: journal ONE clean sequence today."
+    table.cell(tb, 0, 0, title, text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(tb, 0, 1, watch, text_color = color.new(cSweep, 0), text_size = size.tiny, text_halign = text.align_left)
+    table.cell(tb, 0, 2, rule,  text_color = color.new(cStop, 0),  text_size = size.tiny, text_halign = text.align_left)
+    table.cell(tb, 0, 3, hw,    text_color = color.new(cEntry, 0), text_size = size.tiny, text_halign = text.align_left)

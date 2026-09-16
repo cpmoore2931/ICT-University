@@ -1,0 +1,87 @@
+//@version=5
+// ═══════════════════════════════════════════════════════════════════════════
+//  GAP SPOTTER v3 — one thing at a time.
+//
+//  It watches every gap silently in the background. It draws NOTHING
+//  until a gap gets CLOSED through and flips — the inversion.
+//
+//  Then it shows exactly ONE blue zone: the newest inversion.
+//  Blue zone on screen = "here is the entry zone, wait for the retest."
+//  No blue zone = nothing to do.
+//
+//  The zone deletes itself when it fails (price closes back through it)
+//  or when it gets old.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Gap Spotter — Inversions Only", "Gap Spotter", overlay = true,
+     max_boxes_count = 5, max_labels_count = 5)
+
+minPts = input.float(8.0, "Ignore gaps smaller than (points)", minval = 0, step = 1)
+zoneAge = input.int(45, "Blue zone dies after (bars)", minval = 10, step = 5)
+
+cInv = #2962FF          // bright blue — the one and only thing this tool draws
+
+// ── silent memory of fresh gaps (nothing is drawn for these) ──
+var array<float> tops  = array.new<float>()
+var array<float> bots  = array.new<float>()
+var array<bool>  isB   = array.new<bool>()
+var array<int>   born  = array.new<int>()
+
+// ── the one blue zone ──
+var box   inv     = na
+var label invLab  = na
+var bool  invBull = false
+var int   invBorn = 0
+
+if barstate.isconfirmed
+    // remember new gaps quietly
+    if low > high[2] and (low - high[2]) >= minPts
+        array.push(tops, low), array.push(bots, high[2]), array.push(isB, true), array.push(born, bar_index)
+    if high < low[2] and (low[2] - high) >= minPts
+        array.push(tops, low[2]), array.push(bots, high), array.push(isB, false), array.push(born, bar_index)
+
+    // forget stale ones
+    bool cleaning = true
+    while cleaning
+        if array.size(born) == 0
+            cleaning := false
+        else if bar_index - array.get(born, 0) > 100
+            array.shift(tops), array.shift(bots), array.shift(isB), array.shift(born)
+        else
+            cleaning := false
+
+    // did any remembered gap just flip? (a CLOSE through the far side)
+    if array.size(tops) > 0
+        j = array.size(tops) - 1
+        while j >= 0
+            t = array.get(tops, j)
+            b = array.get(bots, j)
+            bull = array.get(isB, j)
+            flipped = bull ? close < b : close > t
+            if flipped
+                // this is now THE zone — replace whatever was there
+                box.delete(inv)
+                label.delete(invLab)
+                inv := box.new(bar_index - 3, t, bar_index + 8, b,
+                     border_color = cInv, border_width = 2,
+                     bgcolor = color.new(cInv, 85))
+                invLab := label.new(bar_index + 8, (t + b) / 2,
+                     "ENTRY ZONE — wait for the retest",
+                     style = label.style_label_left, color = color.new(cInv, 15),
+                     textcolor = color.white, size = size.small)
+                invBull := not bull        // it flipped direction
+                invBorn := bar_index
+                array.remove(tops, j), array.remove(bots, j), array.remove(isB, j), array.remove(born, j)
+            j -= 1
+
+    // manage the blue zone: stretch it, or kill it
+    if not na(inv)
+        box.set_right(inv, bar_index + 8)
+        label.set_x(invLab, bar_index + 8)
+        t = box.get_top(inv)
+        b = box.get_bottom(inv)
+        failed = invBull ? close < b : close > t     // closed back through = inversion failed
+        tooOld = bar_index - invBorn > zoneAge
+        if failed or tooOld
+            box.delete(inv)
+            label.delete(invLab)
+            inv := na
