@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import socket
 import sqlite3
 import threading
 from datetime import date, datetime, timedelta
@@ -474,6 +475,14 @@ class TrainerServer(ThreadingHTTPServer):
         self.weekly = weekly
 
 
+class V6Server(TrainerServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self) -> None:
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        super().server_bind()
+
+
 def main() -> None:
     WEEKLY.mkdir(parents=True, exist_ok=True)
     conn = connect(DB_PATH)
@@ -481,6 +490,8 @@ def main() -> None:
         import_folder(conn, WEEKLY)
     port = int(__import__("os").environ.get("PORT", "8787"))
     server = TrainerServer(("0.0.0.0", port), conn, WEEKLY)
+    v6 = V6Server(("::", port), conn, WEEKLY)
+    threading.Thread(target=v6.serve_forever, name="ifvg-v6", daemon=True).start()
     print(f"IFVG Trainer  http://127.0.0.1:{port}", flush=True)
     print("Listening on all interfaces.", flush=True)
     print(f"Drop CSV files in  {WEEKLY}", flush=True)
