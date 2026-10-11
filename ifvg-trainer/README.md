@@ -44,9 +44,10 @@ A sample MNQ week (Oct 5–9, 2026) is already in the folder.
 5. **This week** plays the latest 5 days, Monday through Friday, one at a time.
 6. **Step** moves one bar. **Play** runs at 1x, 5x, or 20x. Use 1m, 5m, or 15m.
 7. The chart labels the steps as they happen: **1 DOL**, **2 Sweep**, **3 V-shape**, **4 Inversion**, **5 Retest**.
-8. Tick those same steps in order. Set entry, stop, and target. Then press **Enter**.
-9. If you press **Enter** too early, the screen says **NOT A SETUP**.
-10. A bad row or a missing minute shows a yellow note. The app keeps going.
+8. After the retest, the chart shows the pattern: **Entry** in the gap, **Stop** under the sweep, **Target** at the DOL. If price hits one, it shows **Exit** and why.
+9. Tick those same steps in order. Set entry, stop, and target. Then press **Enter**.
+10. If you press **Enter** too early, the screen says **NOT A SETUP**.
+11. A bad row or a missing minute shows a yellow note. The app keeps going.
 
 Green means you passed the checklist for that day. Yellow means you stepped the chart at least once.
 

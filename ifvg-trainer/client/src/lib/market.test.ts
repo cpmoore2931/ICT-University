@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregate, buildLevels, findStepMarks, formatClock, nyParts, sliceTo, stepForward } from "./market";
+import { aggregate, buildLevels, findStepMarks, findTradeMarks, formatClock, nyParts, sliceTo, stepForward } from "./market";
 import type { Bar, Level } from "./market";
 
 function unix(iso: string): number {
@@ -116,5 +116,56 @@ describe("step labels", () => {
     const seen = sliceTo(day(), unix("2026-10-07T12:31:00Z"));
     const marks = findStepMarks(seen, [dol], "asia-high", 8, 1);
     expect(marks.map((mark) => mark.n)).toEqual([1, 2]);
+  });
+});
+
+describe("entry and exits", () => {
+  const dol: Level = { id: "asia-high", name: "Asia high", price: 120, color: "#FFE600" };
+
+  function day(): Bar[] {
+    return [
+      bar("2026-10-06T22:05:00Z", 105, 50, 100),
+      bar("2026-10-07T00:30:00Z", 120, 110, 115),
+      bar("2026-10-07T08:05:00Z", 108, 100, 104),
+      bar("2026-10-07T12:30:00Z", 101, 99, 100),
+      bar("2026-10-07T12:31:00Z", 100, 90, 91),
+      bar("2026-10-07T12:32:00Z", 102, 91, 101),
+      bar("2026-10-07T12:33:00Z", 103, 100, 102),
+      bar("2026-10-07T12:34:00Z", 104, 99, 103),
+      bar("2026-10-07T12:35:00Z", 96, 94, 95),
+      bar("2026-10-07T12:36:00Z", 102, 97, 101),
+      bar("2026-10-07T12:37:00Z", 100, 97, 99),
+    ];
+  }
+
+  it("waits until the retest before it shows a trade", () => {
+    const seen = sliceTo(day(), unix("2026-10-07T12:36:00Z"));
+    expect(findTradeMarks(seen, [dol], "asia-high", 8, 1, 0.25)).toEqual([]);
+  });
+
+  it("shows the entry, the stop, and the target with a short why", () => {
+    const marks = findTradeMarks(day(), [dol], "asia-high", 8, 1, 0.25);
+    expect(marks.map((mark) => mark.name)).toEqual(["Entry", "Stop", "Target"]);
+    expect(marks.map((mark) => mark.why)).toEqual(["In the gap", "Under the sweep", "The DOL"]);
+    expect(marks[0].t).toBe(unix("2026-10-07T12:37:00Z"));
+    expect(marks[0].price).toBe(100);
+    expect(marks[1].t).toBe(unix("2026-10-07T12:31:00Z"));
+    expect(marks[1].price).toBe(89.75);
+    expect(marks[2].price).toBe(120);
+  });
+
+  it("marks the DOL exit when price reaches the draw", () => {
+    const bars = day().concat([bar("2026-10-07T12:40:00Z", 121, 100, 120)]);
+    const exit = findTradeMarks(bars, [dol], "asia-high", 8, 1, 0.25).find((mark) => mark.name === "Exit");
+    expect(exit?.why).toBe("DOL hit");
+    expect(exit?.price).toBe(120);
+    expect(exit?.t).toBe(unix("2026-10-07T12:40:00Z"));
+  });
+
+  it("marks the stop exit when the sweep low breaks", () => {
+    const bars = day().concat([bar("2026-10-07T12:40:00Z", 130, 80, 125)]);
+    const exit = findTradeMarks(bars, [dol], "asia-high", 8, 1, 0.25).find((mark) => mark.name === "Exit");
+    expect(exit?.why).toBe("Low broke");
+    expect(exit?.price).toBe(89.75);
   });
 });

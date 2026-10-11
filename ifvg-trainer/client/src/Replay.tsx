@@ -7,6 +7,7 @@ import {
   dolChoices,
   findFvgs,
   findStepMarks,
+  findTradeMarks,
   formatClock,
   roundTick,
   sliceTo,
@@ -71,11 +72,15 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
     [session, seen, view],
   );
   const gaps = useMemo(() => (session ? findFvgs(view, session.gap) : []), [session, view]);
+  const snap = session && (session.symbol === "GC" || session.symbol === "MGC") ? 2 : 8;
   const steps = useMemo(() => {
     if (!session) return [];
-    const snap = session.symbol === "GC" || session.symbol === "MGC" ? 2 : 8;
     return findStepMarks(seen, levels, dol, snap, session.gap);
-  }, [session, seen, levels, dol]);
+  }, [session, seen, levels, dol, snap]);
+  const trades = useMemo(() => {
+    if (!session) return [];
+    return findTradeMarks(seen, levels, dol, snap, session.gap, session.tick);
+  }, [session, seen, levels, dol, snap]);
   const draws = useMemo(() => dolChoices(levels, seen[seen.length - 1]?.c ?? 0), [levels, seen]);
 
   const markPracticed = useCallback(() => {
@@ -192,6 +197,7 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
           fvgs={gaps}
           marks={{ entry: entry ?? undefined, stop: stop ?? undefined, target: target ?? undefined }}
           steps={steps}
+          trades={trades}
           onPrice={onPrice}
         />
         <aside className="side">
@@ -217,6 +223,20 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
                 </button>
               );
             })}
+            {trades.length > 0 ? (
+              <div className="pattern">
+                <div className="pattern-title">Pattern</div>
+                {trades.map((mark) => (
+                  <p key={mark.kind} className={mark.why === "DOL hit" ? "exit win" : mark.why === "Low broke" ? "exit loss" : mark.kind}>
+                    <strong>{mark.name}</strong>
+                    {mark.why}
+                  </p>
+                ))}
+                {trades.some((mark) => mark.kind === "exit") ? null : (
+                  <p className="open"><strong>Open</strong>No exit yet</p>
+                )}
+              </div>
+            ) : null}
             <div className="prices">
               <button className={arm === "entry" ? "on" : ""} onClick={() => setArm("entry")}>
                 Entry {priceText(entry)}

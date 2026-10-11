@@ -9,8 +9,9 @@ import {
   type ISeriesApi,
   type MouseEventParams,
   type UTCTimestamp,
+  type AutoscaleInfo,
 } from "lightweight-charts";
-import { type Bar, type Fvg, type Level, type StepMark } from "./lib/market";
+import { type Bar, type Fvg, type Level, type StepMark, type TradeMark } from "./lib/market";
 
 type Marks = { entry?: number; stop?: number; target?: number };
 
@@ -20,6 +21,7 @@ type Props = {
   fvgs: Fvg[];
   marks: Marks;
   steps: StepMark[];
+  trades: TradeMark[];
   onPrice: (price: number) => void;
 };
 
@@ -31,14 +33,22 @@ const STEP_COLOR: Record<number, string> = {
   5: "#00E676",
 };
 
-export function ChartPane({ bars, levels, fvgs, marks, steps, onPrice }: Props) {
+export function ChartPane({ bars, levels, fvgs, marks, steps, trades, onPrice }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
   const onPriceRef = useRef(onPrice);
+  const scalePrices = useRef<number[]>([]);
   onPriceRef.current = onPrice;
+  scalePrices.current = [
+    ...levels.map((level) => level.price),
+    ...trades.map((mark) => mark.price),
+    ...(marks.entry == null ? [] : [marks.entry]),
+    ...(marks.stop == null ? [] : [marks.stop]),
+    ...(marks.target == null ? [] : [marks.target]),
+  ];
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -118,11 +128,22 @@ export function ChartPane({ bars, levels, fvgs, marks, steps, onPrice }: Props) 
     const series = seriesRef.current;
     const chart = chartRef.current;
     if (!series || !chart) return;
-    const paint = () => drawOverlay(chart, series, canvasRef.current, fvgs, bars, steps);
+    series.applyOptions({
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const res = original();
+        if (!res?.priceRange) return res;
+        for (const price of scalePrices.current) {
+          res.priceRange.minValue = Math.min(res.priceRange.minValue, price);
+          res.priceRange.maxValue = Math.max(res.priceRange.maxValue, price);
+        }
+        return res;
+      },
+    });
+    const paint = () => drawOverlay(chart, series, canvasRef.current, fvgs, bars, steps, trades);
     paint();
     chart.timeScale().subscribeVisibleLogicalRangeChange(paint);
     return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(paint);
-  }, [bars, fvgs, steps]);
+  }, [bars, fvgs, steps, trades]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -186,6 +207,7 @@ function drawOverlay(
   fvgs: Fvg[],
   bars: Bar[],
   steps: StepMark[],
+  trades: TradeMark[],
 ) {
   if (!canvas) return;
   const parent = canvas.parentElement;
@@ -216,6 +238,7 @@ function drawOverlay(
     ctx.fillRect(left, top, Math.max(8, Math.abs(x2 - x1)), Math.max(4, Math.abs(yBot - yTop)));
   }
   drawSteps(ctx, chart, series, steps, bars, width, height);
+  drawTrades(ctx, chart, series, trades, bars, width, height);
 }
 
 function drawSteps(
@@ -237,6 +260,7 @@ function drawSteps(
     if (rawY == null) continue;
     let x = rawX == null ? 28 : Number(rawX);
     const yPrice = Number(rawY);
+    if (yPrice < 8 || yPrice > height - 8) continue;
     if (mark.n === 1) x -= 120;
     if (x < 24) x = 28;
     if (x > width - 24) x = width - 24;
@@ -276,5 +300,77 @@ function drawSteps(
     ctx.strokeText(mark.name, textX, y);
     ctx.fillStyle = color;
     ctx.fillText(mark.name, textX, y);
+  }
+}
+
+const TRADE_COLOR: Record<TradeMark["kind"], string> = {
+  entry: "#00E676",
+  stop: "#FF2D2D",
+  target: "#FFE600",
+  exit: "#FFFFFF",
+};
+
+function drawTrades(
+  ctx: CanvasRenderingContext2D,
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+  trades: TradeMark[],
+  bars: Bar[],
+  width: number,
+  height: number,
+) {
+  const placed: { x: number; y: number }[] = [];
+  const rightTime = bars[bars.length - 1]?.t;
+  for (const mark of trades) {
+    const time = mark.kind === "target" && rightTime ? rightTime : mark.t;
+    const rawX = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    const rawY = series.priceToCoordinate(mark.price);
+    if (rawY == null) continue;
+    let x = rawX == null ? 36 : Number(rawX);
+    const yPrice = Number(rawY);
+    if (yPrice < 8 || yPrice > height - 8) continue;
+    if (mark.kind === "target") x -= 280;
+    if (mark.kind === "entry") x += 84;
+    if (x < 24) x = 36;
+    if (x > width - 24) x = width - 160;
+    const below = mark.kind === "stop" || mark.why === "Low broke";
+    let y = yPrice + (mark.kind === "target" ? 34 : below ? 46 : -46);
+    y = Math.max(36, Math.min(height - 36, y));
+    for (let guard = 0; guard < 8; guard += 1) {
+      const hit = placed.some((spot) => Math.abs(spot.x - x) < 150 && Math.abs(spot.y - y) < 52);
+      if (!hit) break;
+      y += below ? 52 : -52;
+      y = Math.max(36, Math.min(height - 36, y));
+    }
+    placed.push({ x, y });
+    const color = mark.why === "DOL hit" ? "#00E676" : mark.why === "Low broke" ? "#FF2D2D" : TRADE_COLOR[mark.kind];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - 18, yPrice);
+    ctx.lineTo(x + 18, yPrice);
+    ctx.stroke();
+
+    ctx.font = "700 18px Lexend, sans-serif";
+    const nameW = ctx.measureText(mark.name).width;
+    ctx.font = "700 16px Lexend, sans-serif";
+    const whyW = ctx.measureText(mark.why).width;
+    const boxW = Math.max(nameW, whyW) + 16;
+    const boxH = 46;
+    let left = x - boxW / 2;
+    if (left < 8) left = 8;
+    if (left + boxW > width - 8) left = width - 8 - boxW;
+    const top = y - boxH / 2;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(left, top, boxW, boxH);
+    ctx.strokeRect(left, top, boxW, boxH);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "700 18px Lexend, sans-serif";
+    ctx.fillStyle = color;
+    ctx.fillText(mark.name, left + boxW / 2, top + 15);
+    ctx.font = "700 16px Lexend, sans-serif";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(mark.why, left + boxW / 2, top + 33);
   }
 }

@@ -227,6 +227,38 @@ h1 {
 
 .choice { font-size: 18px; min-height: 56px; }
 
+.pattern {
+  border: 3px solid #ffffff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.pattern-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.pattern p {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.pattern strong {
+  display: block;
+  font-size: 22px;
+}
+
+.pattern .entry strong { color: #00e676; }
+.pattern .stop strong { color: #ff2d2d; }
+.pattern .target strong { color: #ffe600; }
+.pattern .win strong { color: #00e676; }
+.pattern .loss strong { color: #ff2d2d; }
+.pattern .open strong { color: #ffffff; }
+
 .prices {
   display: grid;
   gap: 8px;

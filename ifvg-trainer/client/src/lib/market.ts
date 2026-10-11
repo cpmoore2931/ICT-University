@@ -239,36 +239,40 @@ export type StepMark = {
   price: number;
 };
 
+export type TradeMark = {
+  kind: "entry" | "stop" | "target" | "exit";
+  name: string;
+  why: string;
+  t: number;
+  price: number;
+};
+
 function afterOpenLock(unix: number): boolean {
   const { hh, mm } = nyParts(unix);
   if (hh >= 18) return false;
   return hh > 8 || (hh === 8 && mm >= 30);
 }
 
-/** Numbers 1–5 for the model. Only bars already on screen. */
-export function findStepMarks(
-  bars: Bar[],
-  levels: Level[],
-  dolId: string,
-  vMin: number,
-  minGap: number,
-): StepMark[] {
-  if (!bars.length) return [];
-  const marks: StepMark[] = [];
-  const last = bars[bars.length - 1];
-  const draws = dolId
-    ? levels.filter((level) => level.id === dolId)
-    : levels.filter((level) => {
-        const draw = level.id === "asia-high" || level.id === "london-high" || level.id.startsWith("eq-high");
-        return draw && level.price > last.c;
-      });
-  for (const level of draws) {
-    marks.push({ n: 1, name: "DOL", t: last.t, price: level.price });
-  }
+function isDraw(level: Level): boolean {
+  return level.id === "asia-high" || level.id === "london-high" || level.id.startsWith("eq-high");
+}
 
-  if (!afterOpenLock(last.t)) return marks;
+type Pattern = {
+  sweep: number;
+  extreme: number;
+  extremeAt: number;
+  shape: number;
+  gapTop: number;
+  gapBottom: number;
+  flip: number;
+  retest: number;
+};
+
+/** The long pattern, using only bars already on screen. */
+function readPattern(bars: Bar[], vMin: number, minGap: number): Pattern | null {
+  if (!bars.length || !afterOpenLock(bars[bars.length - 1].t)) return null;
   const pre = range(bars, 4 * 60, 8 * 60 + 30);
-  if (!pre) return marks;
+  if (!pre) return null;
 
   let sweep = -1;
   for (let i = 0; i < bars.length; i += 1) {
@@ -277,22 +281,34 @@ export function findStepMarks(
       break;
     }
   }
-  if (sweep < 0) return marks;
-  marks.push({ n: 2, name: "Sweep", t: bars[sweep].t, price: bars[sweep].l });
+  if (sweep < 0) return null;
 
   const windowEnd = bars[sweep].t + 20 * 60;
   let extreme = Infinity;
+  let extremeAt = sweep;
   let shape = -1;
   for (let i = sweep; i < bars.length && bars[i].t <= windowEnd; i += 1) {
-    extreme = Math.min(extreme, bars[i].l);
-    if (i === sweep) continue;
-    if (bars[i].c > pre.low && bars[i].c - extreme >= vMin) {
+    if (bars[i].l < extreme) {
+      extreme = bars[i].l;
+      extremeAt = i;
+    }
+    if (i !== sweep && bars[i].c > pre.low && bars[i].c - extreme >= vMin) {
       shape = i;
       break;
     }
   }
-  if (shape < 0) return marks;
-  marks.push({ n: 3, name: "V-shape", t: bars[shape].t, price: bars[shape].h });
+
+  const empty: Pattern = {
+    sweep,
+    extreme,
+    extremeAt,
+    shape,
+    gapTop: 0,
+    gapBottom: 0,
+    flip: -1,
+    retest: -1,
+  };
+  if (shape < 0) return empty;
 
   const gaps: { top: number; bottom: number; formed: number }[] = [];
   for (let i = Math.max(2, sweep); i < bars.length; i += 1) {
@@ -316,13 +332,100 @@ export function findStepMarks(
       }
     }
   }
-  if (flip < 0 || !chosen) return marks;
-  marks.push({ n: 4, name: "Inversion", t: bars[flip].t, price: bars[flip].c });
+  if (flip < 0 || !chosen) return empty;
 
+  let retest = -1;
   for (let i = flip + 1; i < bars.length; i += 1) {
     if (bars[i].c < chosen.bottom) break;
     if (bars[i].l <= chosen.top && bars[i].h >= chosen.bottom) {
-      marks.push({ n: 5, name: "Retest", t: bars[i].t, price: bars[i].l });
+      retest = i;
+      break;
+    }
+  }
+  return {
+    sweep,
+    extreme,
+    extremeAt,
+    shape,
+    gapTop: chosen.top,
+    gapBottom: chosen.bottom,
+    flip,
+    retest,
+  };
+}
+
+/** Numbers 1–5 for the model. Only bars already on screen. */
+export function findStepMarks(
+  bars: Bar[],
+  levels: Level[],
+  dolId: string,
+  vMin: number,
+  minGap: number,
+): StepMark[] {
+  if (!bars.length) return [];
+  const marks: StepMark[] = [];
+  const last = bars[bars.length - 1];
+  const draws = dolId
+    ? levels.filter((level) => level.id === dolId)
+    : levels.filter((level) => isDraw(level) && level.price > last.c);
+  for (const level of draws) {
+    marks.push({ n: 1, name: "DOL", t: last.t, price: level.price });
+  }
+
+  const pattern = readPattern(bars, vMin, minGap);
+  if (!pattern) return marks;
+  marks.push({ n: 2, name: "Sweep", t: bars[pattern.sweep].t, price: bars[pattern.sweep].l });
+  if (pattern.shape < 0) return marks;
+  marks.push({ n: 3, name: "V-shape", t: bars[pattern.shape].t, price: bars[pattern.shape].h });
+  if (pattern.flip < 0) return marks;
+  marks.push({ n: 4, name: "Inversion", t: bars[pattern.flip].t, price: bars[pattern.flip].c });
+  if (pattern.retest < 0) return marks;
+  marks.push({ n: 5, name: "Retest", t: bars[pattern.retest].t, price: bars[pattern.retest].l });
+  return marks;
+}
+
+/** Entry, stop, target, and the exit that prints. Only after the retest. */
+export function findTradeMarks(
+  bars: Bar[],
+  levels: Level[],
+  dolId: string,
+  vMin: number,
+  minGap: number,
+  tick: number,
+): TradeMark[] {
+  const pattern = readPattern(bars, vMin, minGap);
+  if (!pattern || pattern.retest < 0) return [];
+
+  const entry = pattern.gapTop;
+  const stop = tick > 0 ? roundTick(pattern.extreme - tick, tick) : pattern.extreme;
+  const marks: TradeMark[] = [
+    { kind: "entry", name: "Entry", why: "In the gap", t: bars[pattern.retest].t, price: entry },
+    { kind: "stop", name: "Stop", why: "Under the sweep", t: bars[pattern.extremeAt].t, price: stop },
+  ];
+
+  const picked = dolId ? levels.find((level) => level.id === dolId) : undefined;
+  const target = picked && picked.price > entry
+    ? picked
+    : levels
+        .filter((level) => isDraw(level) && level.price > entry)
+        .sort((a, b) => a.price - b.price)[0];
+  if (target) {
+    marks.push({
+      kind: "target",
+      name: "Target",
+      why: "The DOL",
+      t: bars[pattern.retest].t,
+      price: target.price,
+    });
+  }
+
+  for (let i = pattern.retest + 1; i < bars.length; i += 1) {
+    if (bars[i].l <= stop) {
+      marks.push({ kind: "exit", name: "Exit", why: "Low broke", t: bars[i].t, price: stop });
+      break;
+    }
+    if (target && bars[i].h >= target.price) {
+      marks.push({ kind: "exit", name: "Exit", why: "DOL hit", t: bars[i].t, price: target.price });
       break;
     }
   }
