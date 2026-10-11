@@ -1,0 +1,8 @@
+{
+  "name": "ifvg-trainer",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "test": "python3 server/test_import.py && npm test --prefix client"
+  }
+}
