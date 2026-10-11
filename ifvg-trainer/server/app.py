@@ -466,6 +466,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class TrainerServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
     def __init__(self, address: tuple[str, int], conn: sqlite3.Connection, weekly: Path) -> None:
         super().__init__(address, Handler)
         self.conn = conn
@@ -478,8 +480,9 @@ def main() -> None:
     with LOCK:
         import_folder(conn, WEEKLY)
     port = int(__import__("os").environ.get("PORT", "8787"))
-    server = TrainerServer(("127.0.0.1", port), conn, WEEKLY)
+    server = TrainerServer(("0.0.0.0", port), conn, WEEKLY)
     print(f"IFVG Trainer  http://127.0.0.1:{port}", flush=True)
+    print("Listening on all interfaces.", flush=True)
     print(f"Drop CSV files in  {WEEKLY}", flush=True)
     server.serve_forever()
 

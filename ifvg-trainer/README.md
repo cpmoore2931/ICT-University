@@ -13,7 +13,7 @@ cd ifvg-trainer
 npm start
 ```
 
-Open [http://127.0.0.1:8787](http://127.0.0.1:8787).
+Open [http://127.0.0.1:8787](http://127.0.0.1:8787). The app listens on all interfaces, so a tunnel can reach that port.
 
 ## Drop a week
 
