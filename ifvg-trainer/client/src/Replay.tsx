@@ -6,6 +6,7 @@ import {
   buildLevels,
   dolChoices,
   findFvgs,
+  findStepMarks,
   formatClock,
   roundTick,
   sliceTo,
@@ -70,6 +71,11 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
     [session, seen, view],
   );
   const gaps = useMemo(() => (session ? findFvgs(view, session.gap) : []), [session, view]);
+  const steps = useMemo(() => {
+    if (!session) return [];
+    const snap = session.symbol === "GC" || session.symbol === "MGC" ? 2 : 8;
+    return findStepMarks(seen, levels, dol, snap, session.gap);
+  }, [session, seen, levels, dol]);
   const draws = useMemo(() => dolChoices(levels, seen[seen.length - 1]?.c ?? 0), [levels, seen]);
 
   const markPracticed = useCallback(() => {
@@ -185,6 +191,7 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
           levels={levels}
           fvgs={gaps}
           marks={{ entry: entry ?? undefined, stop: stop ?? undefined, target: target ?? undefined }}
+          steps={steps}
           onPrice={onPrice}
         />
         <aside className="side">

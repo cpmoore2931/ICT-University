@@ -10,7 +10,7 @@ import {
   type MouseEventParams,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { type Bar, type Fvg, type Level } from "./lib/market";
+import { type Bar, type Fvg, type Level, type StepMark } from "./lib/market";
 
 type Marks = { entry?: number; stop?: number; target?: number };
 
@@ -19,10 +19,19 @@ type Props = {
   levels: Level[];
   fvgs: Fvg[];
   marks: Marks;
+  steps: StepMark[];
   onPrice: (price: number) => void;
 };
 
-export function ChartPane({ bars, levels, fvgs, marks, onPrice }: Props) {
+const STEP_COLOR: Record<number, string> = {
+  1: "#FFE600",
+  2: "#FF2D2D",
+  3: "#00E676",
+  4: "#FFE600",
+  5: "#00E676",
+};
+
+export function ChartPane({ bars, levels, fvgs, marks, steps, onPrice }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -103,11 +112,17 @@ export function ChartPane({ bars, levels, fvgs, marks, onPrice }: Props) {
       })),
     );
     chart.timeScale().scrollToPosition(6, false);
-    drawGaps(chart, series, canvasRef.current, fvgs, bars);
-    const onRange = () => drawGaps(chart, series, canvasRef.current, fvgs, bars);
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
-    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
-  }, [bars, fvgs]);
+  }, [bars]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    const chart = chartRef.current;
+    if (!series || !chart) return;
+    const paint = () => drawOverlay(chart, series, canvasRef.current, fvgs, bars, steps);
+    paint();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(paint);
+    return () => chart.timeScale().unsubscribeVisibleLogicalRangeChange(paint);
+  }, [bars, fvgs, steps]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -164,12 +179,13 @@ function formatAxis(unix: number): string {
   }).format(new Date(unix * 1000));
 }
 
-function drawGaps(
+function drawOverlay(
   chart: IChartApi,
   series: ISeriesApi<"Candlestick">,
   canvas: HTMLCanvasElement | null,
   fvgs: Fvg[],
   bars: Bar[],
+  steps: StepMark[],
 ) {
   if (!canvas) return;
   const parent = canvas.parentElement;
@@ -198,5 +214,67 @@ function drawGaps(
     const left = Math.min(x1, x2);
     const top = Math.min(yTop, yBot);
     ctx.fillRect(left, top, Math.max(8, Math.abs(x2 - x1)), Math.max(4, Math.abs(yBot - yTop)));
+  }
+  drawSteps(ctx, chart, series, steps, bars, width, height);
+}
+
+function drawSteps(
+  ctx: CanvasRenderingContext2D,
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+  steps: StepMark[],
+  bars: Bar[],
+  width: number,
+  height: number,
+) {
+  const placed: { x: number; y: number }[] = [];
+  const rightTime = bars[bars.length - 1]?.t;
+  const oneCount = steps.filter((mark) => mark.n === 1).length;
+  for (const mark of steps) {
+    const time = mark.n === 1 && rightTime ? rightTime : mark.t;
+    const rawX = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    const rawY = series.priceToCoordinate(mark.price);
+    if (rawY == null) continue;
+    let x = rawX == null ? 28 : Number(rawX);
+    const yPrice = Number(rawY);
+    if (mark.n === 1) x -= 120;
+    if (x < 24) x = 28;
+    if (x > width - 24) x = width - 24;
+    const above = mark.n === 3 || mark.n === 4;
+    const below = mark.n === 2 || mark.n === 5;
+    let y = yPrice + (above ? -30 : below ? 30 : 0);
+    y = Math.max(28, Math.min(height - 28, y));
+    for (let guard = 0; guard < 8; guard += 1) {
+      const hit = placed.some((spot) => Math.abs(spot.x - x) < 48 && Math.abs(spot.y - y) < 40);
+      if (!hit) break;
+      y -= 40;
+      y = Math.max(28, Math.min(height - 28, y));
+    }
+    placed.push({ x, y });
+    const color = STEP_COLOR[mark.n] ?? "#FFFFFF";
+    ctx.beginPath();
+    ctx.arc(x, y, 18, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#000000";
+    ctx.stroke();
+    ctx.fillStyle = "#000000";
+    ctx.font = "700 22px Lexend, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(mark.n), x, y + 1);
+    const showName = mark.n !== 1 || oneCount === 1;
+    if (!showName) continue;
+    ctx.font = "700 18px Lexend, sans-serif";
+    const textW = ctx.measureText(mark.name).width;
+    let textX = x + 26;
+    ctx.textAlign = "left";
+    if (mark.n === 1 || textX + textW > width - 8) textX = Math.max(8, x - 26 - textW);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#000000";
+    ctx.strokeText(mark.name, textX, y);
+    ctx.fillStyle = color;
+    ctx.fillText(mark.name, textX, y);
   }
 }

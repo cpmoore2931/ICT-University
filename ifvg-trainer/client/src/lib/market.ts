@@ -232,6 +232,103 @@ export function dolChoices(levels: Level[], last: number): Level[] {
   });
 }
 
+export type StepMark = {
+  n: number;
+  name: string;
+  t: number;
+  price: number;
+};
+
+function afterOpenLock(unix: number): boolean {
+  const { hh, mm } = nyParts(unix);
+  if (hh >= 18) return false;
+  return hh > 8 || (hh === 8 && mm >= 30);
+}
+
+/** Numbers 1–5 for the model. Only bars already on screen. */
+export function findStepMarks(
+  bars: Bar[],
+  levels: Level[],
+  dolId: string,
+  vMin: number,
+  minGap: number,
+): StepMark[] {
+  if (!bars.length) return [];
+  const marks: StepMark[] = [];
+  const last = bars[bars.length - 1];
+  const draws = dolId
+    ? levels.filter((level) => level.id === dolId)
+    : levels.filter((level) => {
+        const draw = level.id === "asia-high" || level.id === "london-high" || level.id.startsWith("eq-high");
+        return draw && level.price > last.c;
+      });
+  for (const level of draws) {
+    marks.push({ n: 1, name: "DOL", t: last.t, price: level.price });
+  }
+
+  if (!afterOpenLock(last.t)) return marks;
+  const pre = range(bars, 4 * 60, 8 * 60 + 30);
+  if (!pre) return marks;
+
+  let sweep = -1;
+  for (let i = 0; i < bars.length; i += 1) {
+    if (afterOpenLock(bars[i].t) && bars[i].l < pre.low) {
+      sweep = i;
+      break;
+    }
+  }
+  if (sweep < 0) return marks;
+  marks.push({ n: 2, name: "Sweep", t: bars[sweep].t, price: bars[sweep].l });
+
+  const windowEnd = bars[sweep].t + 20 * 60;
+  let extreme = Infinity;
+  let shape = -1;
+  for (let i = sweep; i < bars.length && bars[i].t <= windowEnd; i += 1) {
+    extreme = Math.min(extreme, bars[i].l);
+    if (i === sweep) continue;
+    if (bars[i].c > pre.low && bars[i].c - extreme >= vMin) {
+      shape = i;
+      break;
+    }
+  }
+  if (shape < 0) return marks;
+  marks.push({ n: 3, name: "V-shape", t: bars[shape].t, price: bars[shape].h });
+
+  const gaps: { top: number; bottom: number; formed: number }[] = [];
+  for (let i = Math.max(2, sweep); i < bars.length; i += 1) {
+    const first = bars[i - 2];
+    const third = bars[i];
+    if (first.l > third.h && first.l - third.h >= minGap) {
+      gaps.push({ top: first.l, bottom: third.h, formed: i });
+    }
+  }
+
+  let flip = -1;
+  let chosen: { top: number; bottom: number } | null = null;
+  for (const gap of gaps) {
+    for (let k = Math.max(gap.formed + 1, shape + 1); k < bars.length; k += 1) {
+      if (bars[k].c > gap.top) {
+        if (flip < 0 || k < flip) {
+          flip = k;
+          chosen = gap;
+        }
+        break;
+      }
+    }
+  }
+  if (flip < 0 || !chosen) return marks;
+  marks.push({ n: 4, name: "Inversion", t: bars[flip].t, price: bars[flip].c });
+
+  for (let i = flip + 1; i < bars.length; i += 1) {
+    if (bars[i].c < chosen.bottom) break;
+    if (bars[i].l <= chosen.top && bars[i].h >= chosen.bottom) {
+      marks.push({ n: 5, name: "Retest", t: bars[i].t, price: bars[i].l });
+      break;
+    }
+  }
+  return marks;
+}
+
 export function findFvgs(bars: Bar[], minSize: number): Fvg[] {
   const gaps: Fvg[] = [];
   for (let i = 2; i < bars.length; i += 1) {
