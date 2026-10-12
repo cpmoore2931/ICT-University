@@ -14,6 +14,7 @@ Page's study library for the ICT / PJ Trades liquidity model on NQ, MNQ, and Mic
 | `03-page-orb-strategy/` | Page's own model: the 8:00 AM Gold ORB on MGC. Strategy doc, morning checklist, and the SMT framing that clicked for her. |
 | `04-tradingview-indicators/` | Pine Script indicators built for her charts (session highs/lows, SMT spotter, FVG boxes, gap spotter, base hit ruler, and more). |
 | `05-prop-firm/` | Notes on PJ's FuturesElite account and scaling guide, with honest context about the marketing side. |
+| `ifvg-trainer/` | Local replay app. Drop weekly 1-minute CSVs in `ifvg-trainer/data/weekly/` and run `npm start`. |
 
 ## The model in one line
 

@@ -1,0 +1,8 @@
+node_modules
+client/node_modules
+client/dist
+data/master.sqlite
+data/master.sqlite-*
+__pycache__
+*.pyc
+.DS_Store
