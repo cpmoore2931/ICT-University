@@ -202,8 +202,8 @@ export function buildLevels(
     levels.push({ id: "pre-high", name: "Pre high", price: pre.high, color: "#FF2D2D" });
     levels.push({ id: "pre-low", name: "Pre low", price: pre.low, color: "#FF2D2D" });
   }
-  if (pdh != null) levels.push({ id: "day-high", name: "Day high", price: pdh, color: "#FFFFFF" });
-  if (pdl != null) levels.push({ id: "day-low", name: "Day low", price: pdl, color: "#FFFFFF" });
+  if (pdh != null) levels.push({ id: "day-high", name: "Day high", price: pdh, color: "#000000" });
+  if (pdl != null) levels.push({ id: "day-low", name: "Day low", price: pdl, color: "#000000" });
   for (const price of equalPrices(tfBars, "high", eqTol)) {
     levels.push({
       id: `eq-high-${price}`,

@@ -356,13 +356,24 @@ def set_practice(conn: sqlite3.Connection, symbol: str, day: str, status: str) -
     conn.commit()
 
 
+def _extra_headers(handler: BaseHTTPRequestHandler) -> None:
+    handler.send_header("Connection", "close")
+    handler.send_header("Access-Control-Allow-Origin", "*")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+    handler.send_header("Cache-Control", "no-store")
+
+
 def _send(handler: BaseHTTPRequestHandler, code: int, payload: object) -> None:
     body = json.dumps(payload).encode()
+    handler.close_connection = True
     handler.send_response(code)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
+    _extra_headers(handler)
     handler.end_headers()
-    handler.wfile.write(body)
+    if handler.command != "HEAD":
+        handler.wfile.write(body)
 
 
 def _read_json(handler: BaseHTTPRequestHandler) -> dict[str, object]:
@@ -377,10 +388,21 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict[str, object]:
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     server: "TrainerServer"
 
     def log_message(self, fmt: str, *args: object) -> None:
         return
+
+    def do_OPTIONS(self) -> None:
+        self.close_connection = True
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        _extra_headers(self)
+        self.end_headers()
+
+    def do_HEAD(self) -> None:
+        self.do_GET()
 
     def do_GET(self) -> None:
         try:
@@ -406,6 +428,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._static(parsed.path)
         except Exception:
+            import traceback
+            traceback.print_exc()
             _send(self, 500, {"error": "Something went wrong."})
 
     def do_POST(self) -> None:
@@ -459,11 +483,23 @@ class Handler(BaseHTTPRequestHandler):
         elif file.suffix == ".woff2":
             kind = "font/woff2"
         data = file.read_bytes()
+        if file.name == "index.html":
+            try:
+                with LOCK:
+                    payload = json.dumps(library(self.server.conn))
+                snippet = f"<script>window.__DATA__={payload.replace('<', '\\u003c')}</script>".encode()
+                data = data.replace(b"</head>", snippet + b"</head>", 1)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        self.close_connection = True
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
+        _extra_headers(self)
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":
+            self.wfile.write(data)
 
 
 class TrainerServer(ThreadingHTTPServer):

@@ -1,6 +1,6 @@
 :root {
-  color: #ffffff;
-  background: #000000;
+  color: #000000;
+  background: #ffffff;
   font-family: Lexend, sans-serif;
   font-size: 22px;
   line-height: 1.35;
@@ -12,8 +12,8 @@ html, body, #root { height: 100%; overflow: hidden; }
 
 body {
   margin: 0;
-  background: #000000;
-  color: #ffffff;
+  background: #ffffff;
+  color: #000000;
   overflow: hidden;
 }
 
@@ -22,9 +22,9 @@ button, input {
 }
 
 button {
-  border: 3px solid #ffffff;
-  background: #000000;
-  color: #ffffff;
+  border: 3px solid #000000;
+  background: #ffffff;
+  color: #000000;
   font-size: 22px;
   font-weight: 700;
   border-radius: 14px;
@@ -43,7 +43,7 @@ button.green { background: #00e676; color: #000000; border-color: #00e676; }
 button.red { background: #ff2d2d; color: #000000; border-color: #ff2d2d; }
 button.on { background: #ffe600; color: #000000; border-color: #ffe600; }
 button.done { background: #00e676; color: #000000; border-color: #00e676; }
-button.locked { background: #1c1c1c; color: #ffffff; border-color: #3a3a3a; cursor: default; }
+button.locked { background: #f2f2f2; color: #000000; border-color: #bbbbbb; cursor: default; }
 
 h1 {
   font-size: 42px;
@@ -101,9 +101,12 @@ h1 {
 .dot.passed { background: #00e676; }
 
 .note {
-  color: #ffe600;
+  color: #000000;
+  background: #ffe600;
   font-size: 18px;
   margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
 }
 
 .card {
@@ -115,7 +118,7 @@ h1 {
   font-size: 36px;
   min-height: 92px;
   margin-bottom: 12px;
-  background: #0d0d0d;
+  background: #ffffff;
 }
 
 .card .dot { width: 28px; height: 28px; }
@@ -177,7 +180,7 @@ h1 {
   position: relative;
   height: 100%;
   min-height: 0;
-  border: 3px solid #ffffff;
+  border: 3px solid #000000;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -228,7 +231,7 @@ h1 {
 .choice { font-size: 18px; min-height: 56px; }
 
 .pattern {
-  border: 3px solid #ffffff;
+  border: 3px solid #000000;
   border-radius: 14px;
   padding: 10px 12px;
   display: grid;
@@ -257,7 +260,7 @@ h1 {
 .pattern .target strong { color: #ffe600; }
 .pattern .win strong { color: #00e676; }
 .pattern .loss strong { color: #ff2d2d; }
-.pattern .open strong { color: #ffffff; }
+.pattern .open strong { color: #000000; }
 
 .prices {
   display: grid;
@@ -274,7 +277,7 @@ h1 {
   display: flex;
   gap: 14px;
   font-size: 16px;
-  color: #ffffff;
+  color: #000000;
 }
 
 .swatch { width: 16px; height: 16px; border-radius: 4px; display: inline-block; }

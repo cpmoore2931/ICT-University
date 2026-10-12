@@ -28,7 +28,12 @@ export type Session = {
 };
 
 export async function getLibrary(): Promise<Library> {
-  const response = await fetch("/api/library");
+  const boot = (window as Window & { __DATA__?: Library }).__DATA__;
+  if (boot && Array.isArray(boot.symbols)) {
+    delete (window as Window & { __DATA__?: Library }).__DATA__;
+    return boot;
+  }
+  const response = await fetch("/api/library", { cache: "no-store" });
   if (!response.ok) throw new Error("library");
   return response.json();
 }

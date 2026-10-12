@@ -275,7 +275,7 @@ export function Replay({ symbol, day, queue, onBack, onNext }: Props) {
         <span><i className="swatch" style={{ background: "#FFE600" }} /> Asia / Equal</span>
         <span><i className="swatch" style={{ background: "#00E676" }} /> London</span>
         <span><i className="swatch" style={{ background: "#FF2D2D" }} /> Pre</span>
-        <span><i className="swatch" style={{ background: "#FFFFFF" }} /> Day</span>
+        <span><i className="swatch" style={{ background: "#000000" }} /> Day</span>
       </div>
     </main>
   );

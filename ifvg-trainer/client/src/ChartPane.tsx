@@ -57,21 +57,21 @@ export function ChartPane({ bars, levels, fvgs, marks, steps, trades, onPrice }:
       width: el.clientWidth,
       height: el.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#000000" },
-        textColor: "#ffffff",
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#000000",
         fontSize: 16,
         fontFamily: "Lexend, sans-serif",
       },
       grid: {
-        vertLines: { color: "#222222" },
-        horzLines: { color: "#222222" },
+        vertLines: { color: "#dddddd" },
+        horzLines: { color: "#dddddd" },
       },
       crosshair: {
         vertLine: { labelVisible: false },
       },
-      rightPriceScale: { borderColor: "#ffffff" },
+      rightPriceScale: { borderColor: "#000000" },
       timeScale: {
-        borderColor: "#ffffff",
+        borderColor: "#000000",
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 6,
@@ -307,7 +307,7 @@ const TRADE_COLOR: Record<TradeMark["kind"], string> = {
   entry: "#00E676",
   stop: "#FF2D2D",
   target: "#FFE600",
-  exit: "#FFFFFF",
+  exit: "#000000",
 };
 
 function drawTrades(
